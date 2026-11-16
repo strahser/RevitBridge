@@ -28,9 +28,9 @@
         <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     </ItemGroup>
 
-    <ItemGroup>
-        <ProjectReference Include="..\..\RevitBimCore\src\RevitBimCore.Core\RevitBimCore.Core.csproj" />
-        <ProjectReference Include="..\..\RevitBimCore\src\RevitBimCore.Json\RevitBimCore.Json.csproj" />
-    </ItemGroup>
-
+    <!--
+      Связь с RevitBimCore удалена 16.11.2026: в коде аддина нет ни одного
+      using'а RevitBimCore.* — ProjectReference был мёртвым. Это снимало
+      требование «лежать рядом» с репозиторием RevitBimCore.
+    -->
 </Project>
