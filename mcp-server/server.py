@@ -2,7 +2,7 @@
 """Revit MCP server (stdio) for OpenCode.
 
 Bridges OpenCode -> localhost HTTP bridge hosted inside Revit by
-RevitMcp.Addin (E:\\ПлагиныРевит\\RevitMcp\\RevitMcp.Addin).
+RevitMcp.Addin (E:\\ПлагиныРевит\\\\_bim\\RevitMcp\\RevitMcp.Addin).
 
 Stdio JSON-RPC (MCP 2024-11-05), pure stdlib, no external deps
 (same transport as DSH opencode-runner, proven with OpenCode).

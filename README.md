@@ -29,7 +29,7 @@ OpenCode --stdio--> mcp-server/server.py --HTTP 127.0.0.1:17871--> RevitMcp.Addi
    "mcp": {
      "revit-mcp": {
        "type": "local",
-       "command": ["python", "-X", "utf8", "E:\\ПлагиныРевит\\RevitMcp\\mcp-server\\server.py"],
+       "command": ["python", "-X", "utf8", "E:\\ПлагиныРевит\\\\_bim\\RevitMcp\\mcp-server\\server.py"],
        "enabled": true
      }
    }
@@ -62,5 +62,5 @@ OpenCode --stdio--> mcp-server/server.py --HTTP 127.0.0.1:17871--> RevitMcp.Addi
 
 ## GitHub
 
-Репозитория пока нет (локальный проект `E:\ПлагиныРевит\RevitMcp\`).
+Репозитория пока нет (локальный проект `E:\ПлагиныРевит\_bim\RevitMcp\`).
 Если нужен `git init + push` — скажите, создам репозиторий на GitHub.
