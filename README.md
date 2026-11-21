@@ -54,6 +54,16 @@ OpenCode --stdio--> mcp-server/server.py --WebSocket ws://127.0.0.1:17871/bridge
 Ключи `revit_run_heatloss`: `settings`, `modeling`, `calculations` (= по умолчанию),
 `main`, `reports`, `tools`, `about`, `snapshot`.
 
+## Манифесты команд (P2)
+
+- `manifests/heatloss.bridge.manifest.json` — команды HeatLossRevit4.
+- `DwgParser` и `NetworkBuilder` кладут `bridge.manifest.json` рядом со своим плагином.
+- Add-in читает `*.manifest.json` из `D:\Projects\01-bim`, `04-network`, `03-heating`
+  (override: `REVIT_BRIDGE_MANIFESTS=A;B`).
+- Инструменты MCP: `bridge_ping`, `bridge_commands`, `bridge_call {command,args}`.
+- При вызове команд через мост выставляется `REVIT_BRIDGE_SUPPRESS_UI=1`; UI-команды
+  должны возвращать отчёт через `IExternalCommand.message`, а не открывать `TaskDialog`.
+
 ## Диагностика
 
 * Лог аддина: `%TEMP%\<guid>\RevitBridge.log` (временная папка процесса Revit)

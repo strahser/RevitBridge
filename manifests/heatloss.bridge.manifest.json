@@ -1,0 +1,63 @@
+{
+  "provider": "HeatLossRevit4",
+  "assembly": "MainAppHeatLoss.dll",
+  "version": "1.0",
+  "commands": [
+    {
+      "name": "heatloss.settings",
+      "type": "MainAppHeatLoss.Shell.Services.OpenSettingsCommand",
+      "kind": "externalCommand",
+      "transaction": "write",
+      "description": "Open HeatLoss settings window."
+    },
+    {
+      "name": "heatloss.modeling",
+      "type": "MainAppHeatLoss.Projects.Modeling.Services.ModelingCommand",
+      "kind": "externalCommand",
+      "transaction": "write",
+      "description": "Open HeatLoss modeling window."
+    },
+    {
+      "name": "heatloss.calculations",
+      "type": "MainAppHeatLoss.Calculation.Window.Services.OpenCalculationsCommand",
+      "kind": "externalCommand",
+      "transaction": "write",
+      "description": "Open HeatLoss calculations window."
+    },
+    {
+      "name": "heatloss.main",
+      "type": "MainAppHeatLoss.Shell.Services.ShowMainWindowCommand",
+      "kind": "externalCommand",
+      "transaction": "write",
+      "description": "Open the main HeatLoss window."
+    },
+    {
+      "name": "heatloss.reports",
+      "type": "MainAppHeatLoss.Reports.Window.Services.OpenReportsWindowCommand",
+      "kind": "externalCommand",
+      "transaction": "write",
+      "description": "Open HeatLoss reports window."
+    },
+    {
+      "name": "heatloss.tools",
+      "type": "MainAppHeatLoss.Projects.Tools.ToolsPanel.Services.ToolsPanelCommand",
+      "kind": "externalCommand",
+      "transaction": "write",
+      "description": "Open HeatLoss tools panel."
+    },
+    {
+      "name": "heatloss.about",
+      "type": "MainAppHeatLoss.About.Services.OpenAboutWindowCommand",
+      "kind": "externalCommand",
+      "transaction": "write",
+      "description": "Open HeatLoss about window."
+    },
+    {
+      "name": "heatloss.snapshot",
+      "type": "DirectShapeSnapshot.TestKit.Diagnostics.DumpDirectShapesCommand",
+      "kind": "externalCommand",
+      "transaction": "write",
+      "description": "Dump DirectShape diagnostics."
+    }
+  ]
+}

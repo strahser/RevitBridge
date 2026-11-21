@@ -174,13 +174,13 @@ internal static partial class McpOps
     private static readonly Dictionary<string, string> HeatLossCommands =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            { "settings", "MainAppHeatLoss.OpenSettingsCommand" },
-            { "modeling", "MainAppHeatLoss.Projects.Modeling.ModelingCommand" },
-            { "calculations", "MainAppHeatLoss.Calculations.OpenCalculationsCommand" },
-            { "main", "MainAppHeatLoss.ShowMainWindowCommand" },
-            { "reports", "MainAppHeatLoss.Reports.OpenReportsWindowCommand" },
-            { "tools", "MainAppHeatLoss.Projects.ToolsPanel.ToolsPanelCommand" },
-            { "about", "MainAppHeatLoss.About.OpenAboutWindowCommand" },
+            { "settings", "MainAppHeatLoss.Shell.Services.OpenSettingsCommand" },
+            { "modeling", "MainAppHeatLoss.Projects.Modeling.Services.ModelingCommand" },
+            { "calculations", "MainAppHeatLoss.Calculation.Window.Services.OpenCalculationsCommand" },
+            { "main", "MainAppHeatLoss.Shell.Services.ShowMainWindowCommand" },
+            { "reports", "MainAppHeatLoss.Reports.Window.Services.OpenReportsWindowCommand" },
+            { "tools", "MainAppHeatLoss.Projects.Tools.ToolsPanel.Services.ToolsPanelCommand" },
+            { "about", "MainAppHeatLoss.About.Services.OpenAboutWindowCommand" },
             { "snapshot", "DirectShapeSnapshot.TestKit.Diagnostics.DumpDirectShapesCommand" },
         };
 
@@ -225,7 +225,7 @@ internal static partial class McpOps
     /// = diagnostics). Resolve the command type assembly-agnostically: loaded
     /// assemblies first, then probe the Revit Addins deploy folders.
     /// </summary>
-    private static Type FindCommandType(string typeName)
+    internal static Type FindCommandType(string typeName)
     {
         foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
         {
@@ -302,7 +302,7 @@ internal static partial class McpOps
     /// Forge an instance via FormatterServices and inject the UIApplication into its
     /// UIApplication-typed backing field (field name varies by Revit version, so match by type).
     /// </summary>
-    private static Autodesk.Revit.UI.ExternalCommandData ForgeCommandData(UIApplication app)
+    internal static Autodesk.Revit.UI.ExternalCommandData ForgeCommandData(UIApplication app)
     {
         var cmdData = (Autodesk.Revit.UI.ExternalCommandData)
             FormatterServices.GetUninitializedObject(typeof(Autodesk.Revit.UI.ExternalCommandData));
