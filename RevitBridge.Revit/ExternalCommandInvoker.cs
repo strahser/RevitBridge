@@ -35,7 +35,7 @@ namespace RevitBridge
             try
             {
                 Environment.SetEnvironmentVariable("REVIT_BRIDGE_ARGS_JSON",
-                    args == null ? "" : args.ToString(Newtonsoft.Json.Formatting.None));
+                    args == null ? "" : args.ToString());
                 Environment.SetEnvironmentVariable("REVIT_BRIDGE_COMMAND", typeName);
 
                 var result = command.Execute(data, ref message, elements);
