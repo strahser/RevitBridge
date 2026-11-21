@@ -729,6 +729,121 @@ namespace RevitBridge
             };
         }
 
+        public static object ValidateSystem(UIApplication app, JObject args)
+        {
+            var doc = Doc(app);
+            var systemId = args?.Value<long?>("systemId");
+            var name = args?.Value<string>("name");
+
+            MechanicalSystem system = null;
+            if (systemId != null)
+                system = doc.GetElement(new ElementId(systemId.Value)) as MechanicalSystem;
+            if (system == null && !string.IsNullOrWhiteSpace(name))
+                system = new FilteredElementCollector(doc).OfClass(typeof(MechanicalSystem))
+                    .Cast<MechanicalSystem>()
+                    .FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+            system ??= new FilteredElementCollector(doc).OfClass(typeof(MechanicalSystem))
+                .Cast<MechanicalSystem>().FirstOrDefault();
+            if (system == null) throw new InvalidOperationException("Mechanical system not found.");
+
+            var categories = new[]
+            {
+                BuiltInCategory.OST_DuctCurves,
+                BuiltInCategory.OST_FlexDuctCurves,
+                BuiltInCategory.OST_DuctFitting,
+                BuiltInCategory.OST_DuctAccessory,
+                BuiltInCategory.OST_DuctTerminal,
+                BuiltInCategory.OST_MechanicalEquipment,
+            };
+
+            var members = categories
+                .SelectMany(category => new FilteredElementCollector(doc)
+                    .OfCategory(category).WhereElementIsNotElementType().ToElements())
+                .GroupBy(e => e.Id.Value).Select(g => g.First())
+                .Where(e =>
+                {
+                    var parameter = e.LookupParameter("Имя системы")
+                                    ?? e.LookupParameter("System Name");
+                    return parameter != null && string.Equals(parameter.AsString(),
+                        system.Name, StringComparison.OrdinalIgnoreCase);
+                })
+                .ToList();
+
+            var ducts = members.OfType<Duct>().ToList();
+            var terminals = members
+                .Where(e => e.Category?.Id.Value == (int)BuiltInCategory.OST_DuctTerminal)
+                .OfType<FamilyInstance>().ToList();
+
+            var ductClassification = ducts
+                .Select(d => d.LookupParameter("Классификация систем")?.AsString())
+                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+            var classificationMismatches = members
+                .Select(e => new
+                {
+                    Element = e,
+                    Classification = e.LookupParameter("Классификация систем")?.AsString(),
+                })
+                .Where(x => !string.IsNullOrWhiteSpace(x.Classification) &&
+                            !string.IsNullOrWhiteSpace(ductClassification) &&
+                            !string.Equals(x.Classification, ductClassification,
+                                StringComparison.OrdinalIgnoreCase))
+                .Select(x => new Dictionary<string, object>
+                {
+                    { "id", x.Element.Id.Value },
+                    { "category", x.Element.Category?.Name ?? "" },
+                    { "classification", x.Classification },
+                })
+                .ToList();
+
+            var zeroFlow = new List<Dictionary<string, object>>();
+            foreach (var terminal in terminals)
+            {
+                var flow = terminal.LookupParameter("Расход")
+                           ?? terminal.LookupParameter("Flow");
+                var value = flow?.AsDouble() ?? 0;
+                if (value <= 0)
+                {
+                    zeroFlow.Add(new Dictionary<string, object>
+                    {
+                        { "id", terminal.Id.Value },
+                        { "name", terminal.Name },
+                        { "flow", value },
+                    });
+                }
+            }
+
+            var issues = new List<string>();
+            if (system.IsEmpty) issues.Add("system is empty");
+            if (!system.IsWellConnected) issues.Add("system is not well connected");
+            if (system.IsMultipleNetwork) issues.Add("system is multiple network");
+            if (!system.IsValid) issues.Add("system is not valid");
+            if (ducts.Count == 0) issues.Add("no ducts in system");
+            if (terminals.Count == 0) issues.Add("no air terminals in system");
+            if (classificationMismatches.Count > 0) issues.Add("system classification mismatch");
+            if (zeroFlow.Count > 0) issues.Add("air terminal flow is zero");
+
+            return new Dictionary<string, object>
+            {
+                { "id", system.Id.Value },
+                { "name", system.Name },
+                { "systemType", system.SystemType.ToString() },
+                { "members", members.Count },
+                { "ducts", ducts.Count },
+                { "terminals", terminals.Count },
+                { "wellConnected", system.IsWellConnected },
+                { "empty", system.IsEmpty },
+                { "multipleNetwork", system.IsMultipleNetwork },
+                { "validSystem", system.IsValid },
+                { "sections", system.SectionsCount },
+                { "ductClassification", ductClassification },
+                { "classificationMismatches", classificationMismatches },
+                { "zeroFlowTerminals", zeroFlow },
+                { "issues", issues },
+                { "valid", issues.Count == 0 },
+            };
+        }
+
         public static object GetScheduleData(UIApplication app, JObject args)
         {
             var doc = Doc(app);

@@ -203,6 +203,9 @@ namespace RevitBridge
                 args => _handler.Run(app => PipelineOps.PlaceAirTerminal(app, args as JObject ?? new JObject()), 120000));
             Register("pipeline.list_systems", "List mechanical system instances and member counts", BridgeTransaction.Read, null,
                 args => _handler.Run(app => PipelineOps.ListMechanicalSystems(app, args as JObject ?? new JObject()), 60000));
+            Register("pipeline.validate_system", "Validate a mechanical system: members, classification, flow, connectivity", BridgeTransaction.Read,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"systemId\":{\"type\":\"integer\"},\"name\":{\"type\":\"string\"}}}"),
+                args => _handler.Run(app => PipelineOps.ValidateSystem(app, args as JObject ?? new JObject()), 60000));
             Register("pipeline.get_schedule", "Read schedule table data (header + rows) natively", BridgeTransaction.Read,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"scheduleId\":{\"type\":\"integer\"},\"maxRows\":{\"type\":\"integer\"}},\"required\":[\"scheduleId\"]}"),
                 args => _handler.Run(app => PipelineOps.GetScheduleData(app, args as JObject ?? new JObject()), 60000));
