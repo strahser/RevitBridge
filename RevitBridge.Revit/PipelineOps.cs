@@ -48,15 +48,33 @@ namespace RevitBridge
             var views = new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>()
                 .Where(v => includeTemplates || !v.IsTemplate)
                 .OrderBy(v => v.ViewType.ToString()).ThenBy(v => v.Name)
-                .Select(v => new Dictionary<string, object>
+                .Select(v =>
                 {
-                    { "id", v.Id.Value },
-                    { "name", v.Name },
-                    { "viewType", v.ViewType.ToString() },
-                    { "isTemplate", v.IsTemplate },
-                    { "template", v.ViewTemplateId != ElementId.InvalidElementId
-                        ? doc.GetElement(v.ViewTemplateId)?.Name ?? "" : "" },
-                    { "sheetNumber", v is ViewSheet sheet ? sheet.SheetNumber : "" },
+                    var outline = v.Outline;
+                    return new Dictionary<string, object>
+                    {
+                        { "id", v.Id.Value },
+                        { "name", v.Name },
+                        { "viewType", v.ViewType.ToString() },
+                        { "isTemplate", v.IsTemplate },
+                        { "scale", v.Scale },
+                        { "cropActive", v.CropBoxActive },
+                        { "outlineMinMm", outline == null ? null : new[]
+                            {
+                                outline.Min.U * 304.8, outline.Min.V * 304.8,
+                            }
+                        },
+                        { "outlineMaxMm", outline == null ? null : new[]
+                            {
+                                outline.Max.U * 304.8, outline.Max.V * 304.8,
+                            }
+                        },
+                        { "widthMm", outline == null ? 0 : (outline.Max.U - outline.Min.U) * 304.8 },
+                        { "heightMm", outline == null ? 0 : (outline.Max.V - outline.Min.V) * 304.8 },
+                        { "template", v.ViewTemplateId != ElementId.InvalidElementId
+                            ? doc.GetElement(v.ViewTemplateId)?.Name ?? "" : "" },
+                        { "sheetNumber", v is ViewSheet sheet ? sheet.SheetNumber : "" },
+                    };
                 }).ToList();
             return new Dictionary<string, object> { { "count", views.Count }, { "items", views } };
         }
@@ -66,13 +84,28 @@ namespace RevitBridge
             var doc = Doc(app);
             var sheets = new FilteredElementCollector(doc).OfClass(typeof(ViewSheet)).Cast<ViewSheet>()
                 .OrderBy(s => s.SheetNumber)
-                .Select(s => new Dictionary<string, object>
+                .Select(s =>
                 {
-                    { "id", s.Id.Value },
-                    { "number", s.SheetNumber },
-                    { "name", s.Name },
-                    { "views", s.GetAllPlacedViews().Count },
-                    { "schedules", new FilteredElementCollector(doc, s.Id).OfClass(typeof(ScheduleSheetInstance)).GetElementCount() },
+                    var titleBlock = new FilteredElementCollector(doc, s.Id)
+                        .OfCategory(BuiltInCategory.OST_TitleBlocks)
+                        .WhereElementIsNotElementType()
+                        .FirstElement();
+                    var outline = s.Outline;
+                    var tbBox = titleBlock?.get_BoundingBox(s);
+                    return new Dictionary<string, object>
+                    {
+                        { "id", s.Id.Value },
+                        { "number", s.SheetNumber },
+                        { "name", s.Name },
+                        { "views", s.GetAllPlacedViews().Count },
+                        { "schedules", new FilteredElementCollector(doc, s.Id).OfClass(typeof(ScheduleSheetInstance)).GetElementCount() },
+                        { "widthMm", outline == null ? 0 : (outline.Max.U - outline.Min.U) * 304.8 },
+                        { "heightMm", outline == null ? 0 : (outline.Max.V - outline.Min.V) * 304.8 },
+                        { "tbWidthMm", tbBox == null ? 0 : (tbBox.Max.X - tbBox.Min.X) * 304.8 },
+                        { "tbHeightMm", tbBox == null ? 0 : (tbBox.Max.Y - tbBox.Min.Y) * 304.8 },
+                        { "titleBlock", titleBlock == null ? "" :
+                            (titleBlock.Name + " / " + (titleBlock.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM)?.AsString() ?? "")) },
+                    };
                 }).ToList();
             return new Dictionary<string, object> { { "count", sheets.Count }, { "items", sheets } };
         }

@@ -229,6 +229,16 @@ namespace RevitBridge
             Register("pipeline.place_schedule", "Place a schedule on a sheet", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"scheduleId\":{\"type\":\"integer\"},\"xMm\":{\"type\":\"number\"},\"yMm\":{\"type\":\"number\"}},\"required\":[\"sheetId\",\"scheduleId\"]}"),
                 args => _handler.Run(app => PipelineOps.PlaceScheduleOnSheet(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.layout_sheet", "Crop views, choose sheet format/scale, pack plan + room explication and validate", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"titleBlockName\":{\"type\":\"string\"},\"number\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"viewIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}},\"scheduleIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}},\"marginMm\":{\"type\":\"number\"},\"gapMm\":{\"type\":\"number\"},\"bottomReserveMm\":{\"type\":\"number\"},\"cropMarginMm\":{\"type\":\"number\"},\"scale\":{\"type\":\"integer\"},\"clearSheet\":{\"type\":\"boolean\"}},\"required\":[\"viewIds\"]}"),
+                args => _handler.Run(app => SheetLayoutOps.LayoutSheet(app, args as JObject ?? new JObject()), 600000));
+            Register("pipeline.list_title_blocks", "Measure title block formats (A4/A3/A2/A1) from the template", BridgeTransaction.Read, null,
+                args => _handler.Run(app => SheetLayoutOps.ListTitleBlocks(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.debug_spaces", "Debug space level ids, bounding boxes and locations", BridgeTransaction.Read, null,
+                args => _handler.Run(app => SheetLayoutOps.DebugSpaces(app, args as JObject ?? new JObject()), 60000));
+            Register("pipeline.create_level_explication", "Duplicate the room explication schedule and filter it by level", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"levelId\":{\"type\":\"integer\"},\"name\":{\"type\":\"string\"}},\"required\":[\"levelId\"]}"),
+                args => _handler.Run(app => SheetLayoutOps.CreateLevelExplication(app, args as JObject ?? new JObject()), 120000));
             Register("pipeline.export_sheet_pdf", "Export a sheet to PDF", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"path\":{\"type\":\"string\"}},\"required\":[\"sheetId\",\"path\"]}"),
                 args => _handler.Run(app => PipelineOps.ExportSheetPdf(app, args as JObject ?? new JObject()), 300000));
