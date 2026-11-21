@@ -813,6 +813,40 @@ namespace RevitBridge
                 }
             }
 
+            var openConnectors = new List<Dictionary<string, object>>();
+            foreach (var member in members)
+            {
+                ConnectorManager manager = null;
+                if (member is MEPCurve curve) manager = curve.ConnectorManager;
+                else if (member is FamilyInstance instance && instance.MEPModel != null)
+                    manager = instance.MEPModel.ConnectorManager;
+                if (manager == null) continue;
+
+                foreach (Connector connector in manager.Connectors)
+                {
+                    if (connector.IsConnected) continue;
+                    var cs = connector.CoordinateSystem;
+                    openConnectors.Add(new Dictionary<string, object>
+                    {
+                        { "id", member.Id.Value },
+                        { "category", member.Category?.Name ?? "" },
+                        { "originMm", new[]
+                            {
+                                connector.Origin.X * 304.8,
+                                connector.Origin.Y * 304.8,
+                                connector.Origin.Z * 304.8,
+                            }
+                        },
+                        { "direction", new[]
+                            {
+                                cs?.BasisZ.X ?? 0, cs?.BasisZ.Y ?? 0, cs?.BasisZ.Z ?? 0,
+                            }
+                        },
+                        { "domain", connector.Domain.ToString() },
+                    });
+                }
+            }
+
             var issues = new List<string>();
             if (system.IsEmpty) issues.Add("system is empty");
             if (!system.IsWellConnected) issues.Add("system is not well connected");
@@ -822,6 +856,10 @@ namespace RevitBridge
             if (terminals.Count == 0) issues.Add("no air terminals in system");
             if (classificationMismatches.Count > 0) issues.Add("system classification mismatch");
             if (zeroFlow.Count > 0) issues.Add("air terminal flow is zero");
+
+            var assembled = !system.IsEmpty && !system.IsMultipleNetwork &&
+                            ducts.Count > 0 && terminals.Count > 0 &&
+                            classificationMismatches.Count == 0 && zeroFlow.Count == 0;
 
             return new Dictionary<string, object>
             {
@@ -835,10 +873,12 @@ namespace RevitBridge
                 { "empty", system.IsEmpty },
                 { "multipleNetwork", system.IsMultipleNetwork },
                 { "validSystem", system.IsValid },
+                { "assembled", assembled },
                 { "sections", system.SectionsCount },
                 { "ductClassification", ductClassification },
                 { "classificationMismatches", classificationMismatches },
                 { "zeroFlowTerminals", zeroFlow },
+                { "openConnectors", openConnectors },
                 { "issues", issues },
                 { "valid", issues.Count == 0 },
             };
