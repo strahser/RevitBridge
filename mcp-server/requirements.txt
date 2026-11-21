@@ -1,2 +1,6 @@
-# No third-party dependencies: pure stdlib (json-rpc over stdio).
-# Kept for documentation; nothing to install.
+# RevitBridge MCP server (stdio)
+websocket-client>=1.6
+
+# The proxied DwgParser MCP server (child process) requires mcp>=2.0.
+# It is installed in the DwgParser environment; listed here for documentation.
+mcp>=2.0

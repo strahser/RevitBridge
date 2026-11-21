@@ -54,6 +54,19 @@ OpenCode --stdio--> mcp-server/server.py --WebSocket ws://127.0.0.1:17871/bridge
 Ключи `revit_run_heatloss`: `settings`, `modeling`, `calculations` (= по умолчанию),
 `main`, `reports`, `tools`, `about`, `snapshot`.
 
+## Единый MCP (P3)
+
+Один сервер `revit-bridge` (stdio) объединяет:
+
+- статические `bridge_*` / `revit_*` инструменты (HTTP API add-in);
+- динамические `cmd_<provider>_<command>` — все команды из `bridge.manifest.json`
+  (NetworkBuilder, DwgParser liveOps, HeatLoss);
+- `dwg_*` — прокси DwgParser MCP (DWG/DXF/PDF/3D), дочерний процесс
+  `DwgParser/mcp_server.py` (override: `DWGPARSER_MCP_SERVER`);
+- `revit_call` — generic-вызов любой bridge-команды.
+
+Итого ~239 инструментов в одном MCP. Отдельный `dwgparser` MCP больше не нужен.
+
 ## Манифесты команд (P2)
 
 - `manifests/heatloss.bridge.manifest.json` — команды HeatLossRevit4.

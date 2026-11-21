@@ -23,6 +23,7 @@ Env: REVIT_MCP_URL (default http://127.0.0.1:17871), REVIT_EXE (override),
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -132,6 +133,188 @@ def _bridge_call(msg_type, payload=None, timeout=180):
     return response.get("payload", response)
 
 
+_BRIDGE_TOOLS = {}
+_BRIDGE_TOOLS_AT = 0.0
+
+
+def _tool_name(command):
+    return "cmd_" + re.sub(r"[^A-Za-z0-9_]", "_", command)
+
+
+def _refresh_bridge_tools(force=False):
+    """Discover commands registered in RevitBridge and expose them as MCP tools."""
+    global _BRIDGE_TOOLS, _BRIDGE_TOOLS_AT
+    if not force and _BRIDGE_TOOLS and (time.time() - _BRIDGE_TOOLS_AT) < 10:
+        return
+    try:
+        payload = _bridge_call("commands.list", {}, timeout=5)
+        commands = payload if isinstance(payload, list) else (payload or {}).get("commands", [])
+        mapping = {}
+        for command in commands:
+            name = command.get("name")
+            if not name:
+                continue
+            mapping[_tool_name(name)] = command
+        _BRIDGE_TOOLS = mapping
+        _BRIDGE_TOOLS_AT = time.time()
+    except Exception:
+        # Revit may be closed; keep the static tools working.
+        pass
+
+
+def _dynamic_tools():
+    _refresh_bridge_tools()
+    result = []
+    for tool_name, command in _BRIDGE_TOOLS.items():
+        schema = command.get("argsSchema") or {"type": "object", "properties": {}}
+        result.append({
+            "name": tool_name,
+            "description": "[%s] %s (bridge command: %s)" % (
+                command.get("provider") or "plugin",
+                command.get("description") or command.get("name"),
+                command.get("name")),
+            "inputSchema": schema,
+        })
+    return result
+
+
+# ---------------------------------------------------------------- DwgParser proxy
+# DwgParser has its own stdio MCP server (DWG/DXF/PDF/3D tools). It is proxied as
+# a child process so the client sees one MCP, while DwgParser stays its own repo.
+
+DWGPARSER_SERVER = os.environ.get(
+    "DWGPARSER_MCP_SERVER",
+    r"D:\Projects\01-bim\DwgParser\mcp_server.py",
+)
+DWGPARSER_ROOT = os.path.dirname(DWGPARSER_SERVER)
+_CHILD = None
+_CHILD_READY = False
+_CHILD_TOOLS = {}
+_CHILD_TOOL_MAP = {}
+_CHILD_AT = 0.0
+_CHILD_ID = 0
+
+
+def _stop_child():
+    global _CHILD, _CHILD_READY
+    try:
+        if _CHILD is not None and _CHILD.poll() is None:
+            _CHILD.terminate()
+            _CHILD.wait(timeout=3)
+    except Exception:
+        pass
+    _CHILD = None
+    _CHILD_READY = False
+
+
+def _child_raw(req_id, method, params, timeout=30):
+    global _CHILD_ID
+    child = _CHILD
+    if child is None or child.poll() is not None:
+        return None
+    child.stdin.write(json.dumps(
+        {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params},
+        ensure_ascii=False) + "\n")
+    child.stdin.flush()
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        line = child.stdout.readline()
+        if not line:
+            return None
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except Exception:
+            continue
+        if msg.get("id") == req_id:
+            return msg
+    return None
+
+
+def _ensure_child():
+    global _CHILD, _CHILD_READY
+    if _CHILD is not None and _CHILD.poll() is None and _CHILD_READY:
+        return True
+    if not os.path.isfile(DWGPARSER_SERVER):
+        return False
+    try:
+        _CHILD = subprocess.Popen(
+            [sys.executable, "-X", "utf8", DWGPARSER_SERVER],
+            cwd=DWGPARSER_ROOT,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True, encoding="utf-8", bufsize=1,
+        )
+        init = _child_raw(0, "initialize", {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "revit-bridge-proxy", "version": "1"},
+        }, timeout=30)
+        if not init:
+            _stop_child()
+            return False
+        _CHILD.stdin.write(json.dumps(
+            {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}) + "\n")
+        _CHILD.stdin.flush()
+        _CHILD_READY = True
+        return True
+    except Exception:
+        _stop_child()
+        return False
+
+
+def _child_request(method, params, timeout=60):
+    global _CHILD_ID
+    if not _ensure_child():
+        raise RuntimeError("DwgParser MCP is unavailable at " + DWGPARSER_SERVER)
+    _CHILD_ID += 1
+    response = _child_raw(_CHILD_ID, method, params, timeout)
+    if not response:
+        _stop_child()
+        raise RuntimeError("DwgParser MCP did not respond to " + method)
+    if "error" in response:
+        raise RuntimeError("DwgParser MCP error: %s" % response["error"])
+    return response.get("result")
+
+
+def _refresh_child_tools(force=False):
+    global _CHILD_TOOLS, _CHILD_TOOL_MAP, _CHILD_AT
+    if not force and _CHILD_TOOLS and (time.time() - _CHILD_AT) < 30:
+        return
+    try:
+        result = _child_request("tools/list", {}, timeout=60) or {}
+        tools = result.get("tools", [])
+        mapping = {}
+        tool_map = {}
+        for tool in tools:
+            original = tool.get("name")
+            if not original:
+                continue
+            name = "dwg_" + re.sub(r"[^A-Za-z0-9_]", "_", original)
+            mapping[name] = {
+                "name": name,
+                "description": "[DwgParser] " + (tool.get("description") or original),
+                "inputSchema": tool.get("inputSchema") or {"type": "object", "properties": {}},
+            }
+            tool_map[name] = original
+        _CHILD_TOOLS = mapping
+        _CHILD_TOOL_MAP = tool_map
+        _CHILD_AT = time.time()
+    except Exception:
+        _CHILD_AT = time.time()
+
+
+def _child_tools():
+    _refresh_child_tools()
+    return list(_CHILD_TOOLS.values())
+
+
+import atexit
+atexit.register(_stop_child)
+
+
 TOOLS = [
     {"name": "bridge_ping",
      "description": "Ping the RevitBridge WebSocket (protocol v1): returns revitVersion and protocol version.",
@@ -141,6 +324,12 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "bridge_call",
      "description": "Generic bridge call: invoke any registered command by name with JSON args.",
+     "inputSchema": {"type": "object", "properties": {
+         "command": {"type": "string", "description": "Command name from bridge_commands"},
+         "args": {"type": "object", "description": "Command arguments"}},
+         "required": ["command"]}},
+    {"name": "revit_call",
+     "description": "Alias of bridge_call: invoke a RevitBridge command (revit.*, nb.*, dwg.*, heatloss.*).",
      "inputSchema": {"type": "object", "properties": {
          "command": {"type": "string", "description": "Command name from bridge_commands"},
          "args": {"type": "object", "description": "Command arguments"}},
@@ -250,13 +439,22 @@ TOOLS = [
 
 def tool_call(name, args):
     args = args or {}
+    if name.startswith("cmd_"):
+        _refresh_bridge_tools()
     if name == "bridge_ping":
         return _bridge_call("ping", {}, timeout=15)
     if name == "bridge_commands":
         return _bridge_call("commands.list", {}, timeout=15)
-    if name == "bridge_call":
+    if name == "bridge_call" or name == "revit_call":
         return _bridge_call("call", {"command": args.get("command"),
                                      "args": args.get("args") or {}}, timeout=180)
+    if name in _BRIDGE_TOOLS:
+        command = _BRIDGE_TOOLS[name]["name"]
+        return _bridge_call("call", {"command": command, "args": args or {}}, timeout=180)
+    if name.startswith("dwg_") and name not in _CHILD_TOOL_MAP:
+        _refresh_child_tools(force=True)
+    if name in _CHILD_TOOL_MAP:
+        return _child_request("tools/call", {"name": _CHILD_TOOL_MAP[name], "arguments": args}, timeout=300)
     if name == "revit_ping":
         return _api("GET", "/ping", timeout=15)
     if name == "revit_open_document":
@@ -410,10 +608,12 @@ def handle(msg):
     if method == "ping":
         return {}
     if method == "tools/list":
-        return {"tools": TOOLS}
+        return {"tools": TOOLS + _dynamic_tools() + _child_tools()}
     if method == "tools/call":
         try:
             result = tool_call(params.get("name"), params.get("arguments"))
+            if isinstance(result, dict) and "content" in result and "isError" in result:
+                return result
             return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}],
                     "isError": False}
         except Exception as e:
