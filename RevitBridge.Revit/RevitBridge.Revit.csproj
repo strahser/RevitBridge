@@ -8,8 +8,8 @@
         <EnableDynamicLoading>true</EnableDynamicLoading>
         <Configurations>Debug.R24</Configurations>
         <Configurations>$(Configurations);Release.R24</Configurations>
-        <AssemblyName>RevitMcp.Addin</AssemblyName>
-        <RootNamespace>RevitMcp</RootNamespace>
+        <AssemblyName>RevitBridge.Revit</AssemblyName>
+        <RootNamespace>RevitBridge</RootNamespace>
         <LangVersion>latest</LangVersion>
         <Nullable>disable</Nullable>
     </PropertyGroup>
@@ -26,6 +26,11 @@
         <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="2024.3.40" PrivateAssets="all" />
         <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="2024.3.40" PrivateAssets="all" />
         <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\src\RevitBridge.Contracts\RevitBridge.Contracts.csproj" />
+        <ProjectReference Include="..\src\RevitBridge.Core\RevitBridge.Core.csproj" />
     </ItemGroup>
 
     <!--

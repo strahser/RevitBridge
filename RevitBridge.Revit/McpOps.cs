@@ -9,7 +9,7 @@ using Autodesk.Revit.DB.Architecture;
 using Autodesk.Revit.DB.Mechanical;
 using Autodesk.Revit.UI;
 
-namespace RevitMcp;
+namespace RevitBridge;
 
 /// <summary>
 /// All Revit-API work. Every method runs on Revit's main thread (via McpHandler)

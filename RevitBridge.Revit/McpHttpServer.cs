@@ -6,8 +6,10 @@ using System.Text;
 using System.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using RevitBridge.Contracts;
+using RevitBridge.Core;
 
-namespace RevitMcp;
+namespace RevitBridge;
 
 /// <summary>
 /// Minimal localhost HTTP API (HttpListener, 127.0.0.1 only, no auth — local dev bridge).
@@ -25,14 +27,16 @@ internal class McpHttpServer
 {
     private readonly int _port;
     private readonly McpHandler _handler;
+    private readonly BridgeRouter _router;
     private HttpListener _listener;
     private Thread _thread;
     private volatile bool _running;
 
-    public McpHttpServer(int port, McpHandler handler)
+    public McpHttpServer(int port, McpHandler handler, BridgeRouter router)
     {
         _port = port;
         _handler = handler;
+        _router = router;
     }
 
     public void Start()
@@ -41,7 +45,7 @@ internal class McpHttpServer
         _listener.Prefixes.Add("http://127.0.0.1:" + _port + "/");
         _listener.Start();
         _running = true;
-        _thread = new Thread(Loop) { IsBackground = true, Name = "RevitMcp-Http" };
+        _thread = new Thread(Loop) { IsBackground = true, Name = "RevitBridge-Http" };
         _thread.Start();
     }
 
@@ -83,6 +87,25 @@ internal class McpHttpServer
         var path = (req.Url.AbsolutePath ?? "/").TrimEnd('/');
         if (path.Length == 0) path = "/";
         McpLog.Write(req.HttpMethod + " " + path);
+
+        if (req.IsWebSocketRequest && path == BridgeProtocol.WebSocketPath)
+        {
+            BridgeWebSocket.Handle(ctx, _router);
+            return;
+        }
+
+        if (req.HttpMethod == "GET" && path == BridgeProtocol.HealthPath)
+        {
+            WriteJson(ctx, 200, new Dictionary<string, object>
+            {
+                { "ok", true },
+                { "status", "ok" },
+                { "service", "RevitBridge" },
+                { "protocol", BridgeProtocol.Version },
+                { "commands", _router.CommandCount },
+            });
+            return;
+        }
 
         switch (req.HttpMethod + " " + path)
         {

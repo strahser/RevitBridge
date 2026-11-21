@@ -2,7 +2,7 @@
 """Revit MCP server (stdio) for OpenCode.
 
 Bridges OpenCode -> localhost HTTP bridge hosted inside Revit by
-RevitMcp.Addin (E:\\ПлагиныРевит\\\\_bim\\RevitMcp\\RevitMcp.Addin).
+RevitBridge.Revit (E:\\ПлагиныРевит\\\\_bim\\RevitBridge\\RevitBridge.Revit).
 
 Stdio JSON-RPC (MCP 2024-11-05), pure stdlib, no external deps
 (same transport as DSH opencode-runner, proven with OpenCode).
@@ -30,7 +30,7 @@ import urllib.parse
 import urllib.request
 
 PROTOCOL_VERSION = "2024-11-05"
-SERVER_NAME = "revit-mcp"
+SERVER_NAME = "revit-bridge"
 SERVER_VERSION = "0.1.0"
 
 BASE_URL = os.environ.get("REVIT_MCP_URL", "http://127.0.0.1:17871").rstrip("/")
@@ -46,6 +46,9 @@ DEFAULT_MODEL = os.environ.get(
     "REVIT_DEFAULT_MODEL",
     r"E:\ПлагиныРевит\Данные теплотехнический расчет\newBuilding\HvackFinal.rvt",
 )
+
+BRIDGE_URL = os.environ.get("REVIT_BRIDGE_URL", "ws://127.0.0.1:17871/bridge")
+BRIDGE_TOKEN = os.environ.get("REVIT_BRIDGE_TOKEN", "")
 
 
 class RevitDown(RuntimeError):
@@ -66,7 +69,7 @@ def _api(method, path, body=None, timeout=180):
     except OSError as ex:
         raise RevitDown(
             "Revit bridge unreachable at %s (%s). Start Revit 2024 with the "
-            "RevitMcp addin, or call revit_open_document with "
+            "RevitBridge addin, or call revit_open_document with "
             "launch_if_needed=true." % (BASE_URL, ex)
         )
     if not payload.get("ok"):
@@ -92,9 +95,58 @@ def _launch_revit(path):
     subprocess.Popen([exe, path])
 
 
+def _bridge_call(msg_type, payload=None, timeout=180):
+    """One-shot WebSocket call: hello -> ready -> request -> response."""
+    try:
+        import websocket  # websocket-client
+    except Exception as ex:
+        raise RuntimeError("websocket-client is required for the bridge: %s" % ex)
+
+    try:
+        ws = websocket.create_connection(BRIDGE_URL, timeout=min(int(timeout), 10))
+    except Exception as ex:
+        raise RevitDown(
+            "RevitBridge WebSocket unreachable at %s (%s). Start Revit 2024 "
+            "with the RevitBridge addin installed." % (BRIDGE_URL, ex)
+        )
+
+    try:
+        ws.settimeout(timeout)
+        ws.send(json.dumps({"v": 1, "id": "hello", "type": "hello",
+                            "payload": {"token": BRIDGE_TOKEN}}))
+        ready = json.loads(ws.recv())
+        if ready.get("type") != "ready":
+            raise RuntimeError("bridge hello failed: %s" % ready)
+        ws.send(json.dumps({"v": 1, "id": "1", "type": msg_type,
+                            "payload": payload or {}}))
+        response = json.loads(ws.recv())
+    finally:
+        try:
+            ws.close()
+        except Exception:
+            pass
+
+    if response.get("type") == "call.error":
+        err = response.get("payload") or {}
+        raise RuntimeError("bridge error [%s]: %s" % (err.get("code"), err.get("message")))
+    return response.get("payload", response)
+
+
 TOOLS = [
+    {"name": "bridge_ping",
+     "description": "Ping the RevitBridge WebSocket (protocol v1): returns revitVersion and protocol version.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "bridge_commands",
+     "description": "List commands registered in RevitBridge (name, provider, transaction, argsSchema).",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "bridge_call",
+     "description": "Generic bridge call: invoke any registered command by name with JSON args.",
+     "inputSchema": {"type": "object", "properties": {
+         "command": {"type": "string", "description": "Command name from bridge_commands"},
+         "args": {"type": "object", "description": "Command arguments"}},
+         "required": ["command"]}},
     {"name": "revit_ping",
-     "description": "Check that Revit 2024 + RevitMcp addin bridge is alive. Returns Revit version info.",
+     "description": "Check that Revit 2024 + RevitBridge addin bridge is alive. Returns Revit version info.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "revit_open_document",
      "description": ("Open an .rvt model in Revit. Launches Revit 2024 with the file if the bridge "
@@ -198,6 +250,13 @@ TOOLS = [
 
 def tool_call(name, args):
     args = args or {}
+    if name == "bridge_ping":
+        return _bridge_call("ping", {}, timeout=15)
+    if name == "bridge_commands":
+        return _bridge_call("commands.list", {}, timeout=15)
+    if name == "bridge_call":
+        return _bridge_call("call", {"command": args.get("command"),
+                                     "args": args.get("args") or {}}, timeout=180)
     if name == "revit_ping":
         return _api("GET", "/ping", timeout=15)
     if name == "revit_open_document":

@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RevitBridge.Contracts/RevitBridge.Contracts.csproj" />
+    <Project Path="src/RevitBridge.Core/RevitBridge.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RevitBridge.Core.Tests/RevitBridge.Core.Tests.csproj" />
+  </Folder>
+  <Project Path="RevitBridge.Revit/RevitBridge.Revit.csproj" />
+</Solution>

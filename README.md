@@ -1,4 +1,4 @@
-# RevitMcp — мост OpenCode ↔ Revit 2024
+# RevitBridge — мост OpenCode ↔ Revit 2024
 
 Позволяет агенту (OpenCode) самостоятельно: открыть `.rvt` файл, прочитать
 информацию о документе/помещениях/уровнях и запустить окна плагина
@@ -7,11 +7,12 @@
 ## Архитектура
 
 ```
-OpenCode --stdio--> mcp-server/server.py --HTTP 127.0.0.1:17871--> RevitMcp.Addin (внутри Revit) --> Revit API
+OpenCode --stdio--> mcp-server/server.py --WebSocket ws://127.0.0.1:17871/bridge--> RevitBridge.Revit (внутри Revit) --> Revit API
 ```
 
-* **RevitMcp.Addin** (C#, net48, Revit 2024) — `IExternalApplication`, держит
-  `HttpListener` на `127.0.0.1:17871` (порт — `REVIT_MCP_PORT`), все вызовы
+* **RevitBridge.Revit** (C#, net48, Revit 2024) — `IExternalApplication`, держит
+  `HttpListener` на `127.0.0.1:17871` (порт — `REVIT_BRIDGE_PORT`, fallback `REVIT_MCP_PORT`);
+  HTTP `GET /health` + WebSocket `/bridge` (protocol v1, команды `bridge_ping/commands/call`), все вызовы
   Revit API выполняет на главном потоке через `ExternalEvent`.
 * **mcp-server/server.py** (Python, `mcp>=2.0`, только stdlib+`mcp`) —
   stdio MCP-сервер с 8 инструментами. Если мост недоступен, `revit_open_document`
@@ -20,7 +21,7 @@ OpenCode --stdio--> mcp-server/server.py --HTTP 127.0.0.1:17871--> RevitMcp.Addi
 ## Установка (один раз)
 
 1. Собрать аддин:
-   `"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" RevitMcp.Addin\RevitMcp.Addin.csproj /t:Restore,Build /p:Configuration=Release.R24 /p:Platform="Any CPU"`
+   `"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" RevitBridge.Revit\RevitBridge.Revit.csproj /t:Restore,Build /p:Configuration=Release.R24 /p:Platform="Any CPU"`
 2. Разложить в Revit:
    `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install_addin.ps1`
 3. Python-зависимость: `pip install -r mcp-server\requirements.txt` (уже стоит `mcp 2.0.0`)
@@ -29,13 +30,13 @@ OpenCode --stdio--> mcp-server/server.py --HTTP 127.0.0.1:17871--> RevitMcp.Addi
    "mcp": {
      "revit-mcp": {
        "type": "local",
-       "command": ["python", "-X", "utf8", "E:\\ПлагиныРевит\\\\_bim\\RevitMcp\\mcp-server\\server.py"],
+       "command": ["python", "-X", "utf8", "E:\\ПлагиныРевит\\\\_bim\\RevitBridge\\mcp-server\\server.py"],
        "enabled": true
      }
    }
    ```
-5. Перезапустить Revit 2024 (подхватит `RevitMcp.addin`), затем:
-   `revit_open_document` с путём `E:\ПлагиныРевит\Данные теплотехнический расчет\newBuilding\HvackFinal.rvt`.
+5. Перезапустить Revit 2024 (подхватит `RevitBridge.addin`), затем:
+   `revit_open_document` с путём `D:\Projects\_testdata\ТестыОВ\newBuilding\HvackFinal.rvt`.
 
 ## Инструменты
 
@@ -55,12 +56,12 @@ OpenCode --stdio--> mcp-server/server.py --HTTP 127.0.0.1:17871--> RevitMcp.Addi
 
 ## Диагностика
 
-* Лог аддина: `%TEMP%\RevitMcp.log`
+* Лог аддина: `%TEMP%\<guid>\RevitBridge.log` (временная папка процесса Revit)
 * `revit_ping` падает с `RevitDown` — Revit не запущен или аддин не загрузился
-  (проверить `%AppData%\Autodesk\Revit\Addins\2024\RevitMcp.addin`).
+  (проверить `%AppData%\Autodesk\Revit\Addins\2024\RevitBridge.addin`).
 * `POST /run` требует загруженный `MainAppHeatLoss.dll` (плагин HeatLoss установлен).
 
 ## GitHub
 
-Репозитория пока нет (локальный проект `E:\ПлагиныРевит\_bim\RevitMcp\`).
+Репозитория пока нет (локальный проект `D:\Projects\01-bim\RevitBridge\`).
 Если нужен `git init + push` — скажите, создам репозиторий на GitHub.

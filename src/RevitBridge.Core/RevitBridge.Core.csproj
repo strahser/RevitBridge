@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <LangVersion>latest</LangVersion>
+        <Nullable>disable</Nullable>
+        <RootNamespace>RevitBridge.Core</RootNamespace>
+        <AssemblyName>RevitBridge.Core</AssemblyName>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\RevitBridge.Contracts\RevitBridge.Contracts.csproj" />
+    </ItemGroup>
+
+</Project>

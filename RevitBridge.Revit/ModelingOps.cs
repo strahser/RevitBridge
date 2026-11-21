@@ -8,7 +8,7 @@ using Autodesk.Revit.DB.Mechanical;
 using Autodesk.Revit.DB.Plumbing;
 using Autodesk.Revit.UI;
 
-namespace RevitMcp;
+namespace RevitBridge;
 
 internal static partial class McpOps
 {
@@ -915,7 +915,7 @@ internal static partial class McpOps
 
     public static object DryRun(UIApplication app, string operation, Dictionary<string, object> args)
     {
-        // Returns a plan without executing. For RevitMcp, the plan is just echoing the operation + args.
+        // Returns a plan without executing. For RevitBridge, the plan is just echoing the operation + args.
         return new Dictionary<string, object>
         {
             { "dry_run", true },
@@ -928,7 +928,7 @@ internal static partial class McpOps
     public static object UndoLast(UIApplication app)
     {
         // Revit API does not expose a direct programmatic Undo for committed transactions.
-        // Each RevitMcp operation is its own transaction; undo via Revit UI (Ctrl+Z) if needed.
+        // Each RevitBridge operation is its own transaction; undo via Revit UI (Ctrl+Z) if needed.
         return new Dictionary<string, object> { { "ok", false }, { "note", "Per-operation transactions are already committed; use Revit UI Undo (Ctrl+Z) to revert. For safety, use backup_document before destructive ops." } };
     }
 

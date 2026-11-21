@@ -6,7 +6,7 @@
         "python",
         "-X",
         "utf8",
-        "E:\\ПлагиныРевит\\RevitMcp\\mcp-server\\server.py"
+        "E:\\ПлагиныРевит\\RevitBridge\\mcp-server\\server.py"
       ],
       "enabled": true
     }

@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Smoke-test RevitMcp modeling tools against a running Revit bridge.
+"""Smoke-test RevitBridge modeling tools against a running Revit bridge.
 
 Usage:
     python scripts/test_modeling.py            # run all checks (read-only + create)
     python scripts/test_modeling.py --readonly  # only read-only queries
     python scripts/test_modeling.py --create    # create a tiny test wall + room
 
-Requires Revit 2024 running with RevitMcp addin and an open document.
+Requires Revit 2024 running with RevitBridge addin and an open document.
 """
 import json, os, sys, time, urllib.request, urllib.parse
 

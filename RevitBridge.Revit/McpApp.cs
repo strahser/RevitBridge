@@ -1,7 +1,7 @@
 using System;
 using Autodesk.Revit.UI;
 
-namespace RevitMcp;
+namespace RevitBridge;
 
 /// <summary>
 /// Revit ExternalApplication: hosts a tiny localhost HTTP bridge so an out-of-process
@@ -26,14 +26,22 @@ public class McpApp : IExternalApplication
             var uiEvent = ExternalEvent.Create(Handler);
             Handler.Bind(uiEvent);
 
+            var commandHost = new BridgeCommandHost(Handler);
+            try
+            {
+                commandHost.Router.RevitVersion = application.ControlledApplication.VersionName;
+            }
+            catch (Exception) { }
+
             var port = 17871;
-            var env = Environment.GetEnvironmentVariable("REVIT_MCP_PORT");
+            var env = Environment.GetEnvironmentVariable("REVIT_BRIDGE_PORT")
+                      ?? Environment.GetEnvironmentVariable("REVIT_MCP_PORT");
             if (int.TryParse(env, out var parsed) && parsed > 0 && parsed < 65536)
                 port = parsed;
 
-            _server = new McpHttpServer(port, Handler);
+            _server = new McpHttpServer(port, Handler, commandHost.Router);
             _server.Start();
-            McpLog.Write("RevitMcp started on port " + port);
+            McpLog.Write("RevitBridge started on port " + port);
             return Result.Succeeded;
         }
         catch (Exception ex)
@@ -49,7 +57,7 @@ public class McpApp : IExternalApplication
         try
         {
             _server?.Stop();
-            McpLog.Write("RevitMcp stopped");
+            McpLog.Write("RevitBridge stopped");
         }
         catch (Exception ex)
         {

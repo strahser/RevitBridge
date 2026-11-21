@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using Autodesk.Revit.UI;
 
-namespace RevitMcp;
+namespace RevitBridge;
 
 /// <summary>
 /// Marshals work onto Revit's main thread via a single reusable ExternalEvent.
@@ -11,6 +11,7 @@ namespace RevitMcp;
 /// </summary>
 internal class McpHandler : IExternalEventHandler
 {
+    private readonly object _sync = new object();
     private ExternalEvent _event;
     private Func<UIApplication, object> _pending;
     private object _result;
@@ -24,25 +25,29 @@ internal class McpHandler : IExternalEventHandler
 
     public T Run<T>(Func<UIApplication, T> func, int timeoutMs = 120000)
     {
-        if (_event == null)
-            throw new InvalidOperationException("ExternalEvent not initialized");
+        // Serialize calls: one ExternalEvent, one pending delegate, one result slot.
+        lock (_sync)
+        {
+            if (_event == null)
+                throw new InvalidOperationException("ExternalEvent not initialized");
 
-        _gate = new System.Threading.ManualResetEventSlim(false);
-        _result = null;
-        _error = null;
-        _pending = app => func(app);
+            _gate = new System.Threading.ManualResetEventSlim(false);
+            _result = null;
+            _error = null;
+            _pending = app => func(app);
 
-        var accepted = _event.Raise();
-        if (accepted != ExternalEventRequest.Accepted)
-            throw new InvalidOperationException("ExternalEvent.Raise() returned " + accepted);
+            var accepted = _event.Raise();
+            if (accepted != ExternalEventRequest.Accepted)
+                throw new InvalidOperationException("ExternalEvent.Raise() returned " + accepted);
 
-        if (!_gate.Wait(timeoutMs))
-            throw new TimeoutException("Revit is busy (timeout " + timeoutMs + " ms). Try again.");
+            if (!_gate.Wait(timeoutMs))
+                throw new TimeoutException("Revit is busy (timeout " + timeoutMs + " ms). Try again.");
 
-        if (_error != null)
-            throw new InvalidOperationException(_error.Message, _error);
+            if (_error != null)
+                throw new InvalidOperationException(_error.Message, _error);
 
-        return (T)_result;
+            return (T)_result;
+        }
     }
 
     public void Execute(UIApplication app)
@@ -70,18 +75,18 @@ internal class McpHandler : IExternalEventHandler
 
     public string GetName()
     {
-        return "RevitMcp ExternalEvent";
+        return "RevitBridge ExternalEvent";
     }
 }
 
-/// <summary>Best-effort file log in %TEMP%\RevitMcp.log (never throws).</summary>
+/// <summary>Best-effort file log in %TEMP%\RevitBridge.log (never throws).</summary>
 internal static class McpLog
 {
     public static void Write(string message)
     {
         try
         {
-            var path = Path.Combine(Path.GetTempPath(), "RevitMcp.log");
+            var path = Path.Combine(Path.GetTempPath(), "RevitBridge.log");
             File.AppendAllText(path, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + message + Environment.NewLine);
         }
         catch (Exception) { }
