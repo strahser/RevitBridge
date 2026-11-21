@@ -67,6 +67,19 @@ OpenCode --stdio--> mcp-server/server.py --WebSocket ws://127.0.0.1:17871/bridge
 
 Итого ~239 инструментов в одном MCP. Отдельный `dwgparser` MCP больше не нужен.
 
+## Live / background / test (P6)
+
+- **Live:** пользователь открыл Revit; `revit-bridge` подключается к add-in, `bridge_status`
+  показывает `bridge` + активный документ.
+- **Background:** `revit_open_document(launch_if_needed=true, wait_sec=300)` запускает Revit
+  с моделью и ждёт готовности моста; `revit_close_document(save=false)` завершает сценарий.
+  Revit остаётся GUI-процессом; это автоматизация без ручных кликов, не headless.
+- **Test:** `RevitHeadless`/`Nice3point.TUnit.Revit` — отдельный контур, мост не участвует.
+- **Безопасность:** `REVIT_BRIDGE_TOKEN` (hello-token), `REVIT_BRIDGE_ALLOW_WRITES=0` —
+  read-only, `send_code_to_revit` запрещён политикой.
+- **Подпись:** unsigned add-in показывает диалог Revit «Загрузить» (нажать один раз) или
+  подписать сертификатом, доверенным в `TrustedPublisher`/`Root`.
+
 ## Манифесты команд (P2)
 
 - `manifests/heatloss.bridge.manifest.json` — команды HeatLossRevit4.

@@ -322,6 +322,9 @@ TOOLS = [
     {"name": "bridge_commands",
      "description": "List commands registered in RevitBridge (name, provider, transaction, argsSchema).",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "bridge_status",
+     "description": "Readiness of the live/background session: bridge ping + active document info.",
+     "inputSchema": {"type": "object", "properties": {}}},
     {"name": "bridge_call",
      "description": "Generic bridge call: invoke any registered command by name with JSON args.",
      "inputSchema": {"type": "object", "properties": {
@@ -445,6 +448,13 @@ def tool_call(name, args):
         return _bridge_call("ping", {}, timeout=15)
     if name == "bridge_commands":
         return _bridge_call("commands.list", {}, timeout=15)
+    if name == "bridge_status":
+        ping = _bridge_call("ping", {}, timeout=10)
+        try:
+            document = _api("GET", "/doc", timeout=30)
+        except Exception as ex:
+            document = {"error": str(ex)}
+        return {"bridge": ping, "document": document}
     if name == "bridge_call" or name == "revit_call":
         return _bridge_call("call", {"command": args.get("command"),
                                      "args": args.get("args") or {}}, timeout=180)
