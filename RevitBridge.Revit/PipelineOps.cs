@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -710,6 +710,54 @@ namespace RevitBridge
             };
         }
 
+        public static object SetViewScale(UIApplication app, JObject args)
+        {
+            var doc = Doc(app);
+            var view = doc.GetElement(Id(args, "viewId")) as View
+                ?? throw new InvalidOperationException("View not found.");
+            var scale = args?.Value<int?>("scale") ?? 100;
+            if (scale <= 0) throw new ArgumentException("args.scale must be positive");
+            using (var tx = new Transaction(doc, "Bridge Set View Scale"))
+            {
+                tx.Start();
+                view.Scale = scale;
+                tx.Commit();
+            }
+            return new Dictionary<string, object>
+            {
+                { "id", view.Id.Value }, { "name", view.Name }, { "scale", view.Scale },
+            };
+        }
+
+        public static object SetViewCrop(UIApplication app, JObject args)
+        {
+            var doc = Doc(app);
+            var view = doc.GetElement(Id(args, "viewId")) as View
+                ?? throw new InvalidOperationException("View not found.");
+            var min = args?["minMm"]?.ToObject<double[]>() ?? new double[] { 0, 0 };
+            var max = args?["maxMm"]?.ToObject<double[]>() ?? new double[] { 1000, 1000 };
+            var level = (view as ViewPlan)?.GenLevel;
+            var zBase = level?.Elevation ?? 0;
+            using (var tx = new Transaction(doc, "Bridge Set View Crop"))
+            {
+                tx.Start();
+                view.CropBox = new BoundingBoxXYZ
+                {
+                    Transform = Transform.Identity,
+                    Min = new XYZ(Mm(min[0]), Mm(min[1]), zBase - Mm(1000)),
+                    Max = new XYZ(Mm(max[0]), Mm(max[1]), zBase + Mm(10000)),
+                };
+                view.CropBoxActive = true;
+                view.CropBoxVisible = false;
+                tx.Commit();
+            }
+            return new Dictionary<string, object>
+            {
+                { "id", view.Id.Value }, { "name", view.Name },
+                { "cropActive", view.CropBoxActive }, { "scale", view.Scale },
+            };
+        }
+
         public static object SetParameter(UIApplication app, JObject args)
         {
             var doc = Doc(app);
@@ -1170,3 +1218,4 @@ namespace RevitBridge
         }
     }
 }
+

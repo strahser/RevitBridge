@@ -212,6 +212,12 @@ namespace RevitBridge
             Register("pipeline.set_parameter", "Set any element/type parameter by name", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"elementId\":{\"type\":\"integer\"},\"name\":{\"type\":\"string\"},\"value\":{}},\"required\":[\"elementId\",\"name\",\"value\"]}"),
                 args => _handler.Run(app => PipelineOps.SetParameter(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.set_view_scale", "Set a view scale directly (View.Scale)", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"viewId\":{\"type\":\"integer\"},\"scale\":{\"type\":\"integer\"}},\"required\":[\"viewId\",\"scale\"]}"),
+                args => _handler.Run(app => PipelineOps.SetViewScale(app, args as JObject ?? new JObject()), 60000));
+            Register("pipeline.set_view_crop", "Set a rectangular view crop (minMm/maxMm)", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"viewId\":{\"type\":\"integer\"},\"minMm\":{\"type\":\"array\"},\"maxMm\":{\"type\":\"array\"}},\"required\":[\"viewId\",\"minMm\",\"maxMm\"]}"),
+                args => _handler.Run(app => PipelineOps.SetViewCrop(app, args as JObject ?? new JObject()), 60000));
             Register("pipeline.audit_model", "Collector audit: no existing pipes/fittings/equipment/generic models/systems", BridgeTransaction.Read,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"includeAnalysis\":{\"type\":\"boolean\"}}}"),
                 args => _handler.Run(app => AuditOps.AuditModel(app, args as JObject ?? new JObject()), 120000));
