@@ -80,6 +80,45 @@ OpenCode --stdio--> mcp-server/server.py --WebSocket ws://127.0.0.1:17871/bridge
 - **Подпись:** unsigned add-in показывает диалог Revit «Загрузить» (нажать один раз) или
   подписать сертификатом, доверенным в `TrustedPublisher`/`Root`.
 
+## Подпись add-in (доверенный сертификат)
+
+Revit проверяет Authenticode-подпись DLL. Без доверенного сертификата он показывает
+диалог «Безопасность: недопустимая подпись»; подписанный доверенный add-in грузится без вопроса.
+
+**Локальная разработка (самоподписанный сертификат):**
+
+```powershell
+# 1. Создать сертификат подписи кода (один раз)
+$cert = New-SelfSignedCertificate -Type CodeSigningCert `
+    -Subject "CN=RevitBridge Local Dev" `
+    -CertStoreLocation Cert:\CurrentUser\My `
+    -KeyExportPolicy Exportable
+
+# 2. Доверить сертификат (Root может показать подтверждение — нажать «Да»)
+Export-Certificate -Cert $cert -FilePath "$env:TEMP\RevitBridgeLocalDev.cer" -Force
+certutil -addstore -user Root "$env:TEMP\RevitBridgeLocalDev.cer"
+certutil -addstore -user TrustedPublisher "$env:TEMP\RevitBridgeLocalDev.cer"
+
+# 3. Подписать собранные DLL (после каждой пересборки!)
+.\scripts\sign_addin.ps1 -Thumbprint $cert.Thumbprint -Configuration Debug.R24
+
+# 4. Установить add-in
+.\scripts\install_addin.ps1 -Configuration Debug.R24
+```
+
+Проверка:
+
+```powershell
+Get-AuthenticodeSignature .\RevitBridge.Revit\bin\Debug.R24\RevitBridge.Revit.dll |
+    Select-Object Status, @{n='Subject';e={$_.SignerCertificate.Subject}}
+# Status = Valid
+```
+
+**Продакшн:** используйте сертификат код-подписи от CA (не самоподписанный), PFX храните
+в секрете, подписывайте с timestamp (`-TimestampUrl http://timestamp.digicert.com`), а корень
+доверяйте в `LocalMachine` через групповую политику/установщик. Самоподписанный сертификат
+годится только для локальной машины разработчика.
+
 ## Манифесты команд (P2)
 
 - `manifests/heatloss.bridge.manifest.json` — команды HeatLossRevit4.
