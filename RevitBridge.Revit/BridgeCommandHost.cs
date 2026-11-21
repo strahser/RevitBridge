@@ -164,6 +164,63 @@ namespace RevitBridge
             Register("revit.create_line_element", "Create a wall/pipe/duct by two points", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"kind\":{\"type\":\"string\"},\"startMm\":{\"type\":\"array\"},\"endMm\":{\"type\":\"array\"}},\"required\":[\"kind\",\"startMm\",\"endMm\"]}"),
                 args => _handler.Run(app => ExtendedOps.CreateLineElement(app, args as JObject ?? new JObject()), 120000));
+
+            // Pipeline operations (P7): template -> AR link -> spaces -> views -> network -> sheets.
+            Register("pipeline.list_views", "List views and view templates", BridgeTransaction.Read,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"includeTemplates\":{\"type\":\"boolean\"}}}"),
+                args => _handler.Run(app => PipelineOps.ListViews(app, args as JObject ?? new JObject()), 60000));
+            Register("pipeline.list_sheets", "List sheets", BridgeTransaction.Read, null,
+                args => _handler.Run(app => PipelineOps.ListSheets(app, args as JObject ?? new JObject()), 60000));
+            Register("pipeline.clear_model", "Delete links/spaces/model/created floor views, keep schedules/sheets/templates/levels/grids", BridgeTransaction.Write, null,
+                args => _handler.Run(app => PipelineOps.ClearModel(app, args as JObject ?? new JObject()), 600000));
+            Register("pipeline.set_link_room_bounding", "Enable/disable Room Bounding on Revit link types", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"linkTypeId\":{\"type\":\"integer\"},\"enabled\":{\"type\":\"boolean\"}}}"),
+                args => _handler.Run(app => PipelineOps.SetLinkRoomBounding(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.regenerate", "Regenerate the active document", BridgeTransaction.Read, null,
+                args => _handler.Run(app => PipelineOps.Regenerate(app, args as JObject ?? new JObject()), 60000));
+            Register("pipeline.link_revit", "Link an AR .rvt model", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}"),
+                args => _handler.Run(app => PipelineOps.LinkRevit(app, args as JObject ?? new JObject()), 300000));
+            Register("pipeline.create_spaces", "Create MEP spaces from linked rooms (or plan circuits) and validate Area>0", BridgeTransaction.Write, null,
+                args => _handler.Run(app => PipelineOps.CreateSpaces(app, args as JObject ?? new JObject()), 300000));
+            Register("pipeline.delete_spaces", "Delete MEP spaces (OST_MEP_SPACES) and validate no leftovers", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"ids\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}}}}"),
+                args => _handler.Run(app => PipelineOps.DeleteSpaces(app, args as JObject ?? new JObject()), 300000));
+            Register("pipeline.create_plan_view", "Create a floor plan view and apply a view template", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"levelId\":{\"type\":\"integer\"},\"name\":{\"type\":\"string\"},\"templateName\":{\"type\":\"string\"}},\"required\":[\"levelId\"]}"),
+                args => _handler.Run(app => PipelineOps.CreatePlanView(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.delete_views", "Delete views by ids", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"ids\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}}},\"required\":[\"ids\"]}"),
+                args => _handler.Run(app => PipelineOps.DeleteViews(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.connect_terminal_duct", "Connect an air terminal to a duct", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"terminalId\":{\"type\":\"integer\"},\"ductId\":{\"type\":\"integer\"}},\"required\":[\"terminalId\",\"ductId\"]}"),
+                args => _handler.Run(app => PipelineOps.ConnectTerminalToDuct(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.create_system", "Create a mechanical system and add elements", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"typeName\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"elementIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}}}}"),
+                args => _handler.Run(app => PipelineOps.CreateMechanicalSystem(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.place_air_terminal", "Place an air terminal on a level and report its connectors", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"familyName\":{\"type\":\"string\"},\"typeName\":{\"type\":\"string\"},\"levelId\":{\"type\":\"integer\"},\"xMm\":{\"type\":\"number\"},\"yMm\":{\"type\":\"number\"},\"zMm\":{\"type\":\"number\"},\"rotationDeg\":{\"type\":\"number\"}}}"),
+                args => _handler.Run(app => PipelineOps.PlaceAirTerminal(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.list_systems", "List mechanical system instances and member counts", BridgeTransaction.Read, null,
+                args => _handler.Run(app => PipelineOps.ListMechanicalSystems(app, args as JObject ?? new JObject()), 60000));
+            Register("pipeline.get_schedule", "Read schedule table data (header + rows) natively", BridgeTransaction.Read,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"scheduleId\":{\"type\":\"integer\"},\"maxRows\":{\"type\":\"integer\"}},\"required\":[\"scheduleId\"]}"),
+                args => _handler.Run(app => PipelineOps.GetScheduleData(app, args as JObject ?? new JObject()), 60000));
+            Register("pipeline.set_parameter", "Set any element/type parameter by name", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"elementId\":{\"type\":\"integer\"},\"name\":{\"type\":\"string\"},\"value\":{}},\"required\":[\"elementId\",\"name\",\"value\"]}"),
+                args => _handler.Run(app => PipelineOps.SetParameter(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.create_sheet", "Create a sheet", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"number\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"titleBlockName\":{\"type\":\"string\"}}}"),
+                args => _handler.Run(app => PipelineOps.CreateSheet(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.place_view", "Place a view on a sheet", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"viewId\":{\"type\":\"integer\"},\"xMm\":{\"type\":\"number\"},\"yMm\":{\"type\":\"number\"}},\"required\":[\"sheetId\",\"viewId\"]}"),
+                args => _handler.Run(app => PipelineOps.PlaceViewOnSheet(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.place_schedule", "Place a schedule on a sheet", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"scheduleId\":{\"type\":\"integer\"},\"xMm\":{\"type\":\"number\"},\"yMm\":{\"type\":\"number\"}},\"required\":[\"sheetId\",\"scheduleId\"]}"),
+                args => _handler.Run(app => PipelineOps.PlaceScheduleOnSheet(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.export_sheet_pdf", "Export a sheet to PDF", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"path\":{\"type\":\"string\"}},\"required\":[\"sheetId\",\"path\"]}"),
+                args => _handler.Run(app => PipelineOps.ExportSheetPdf(app, args as JObject ?? new JObject()), 300000));
         }
 
         private void LoadManifests()
