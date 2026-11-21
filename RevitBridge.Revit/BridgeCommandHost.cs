@@ -229,6 +229,9 @@ namespace RevitBridge
             Register("pipeline.create_sheet", "Create a sheet", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"number\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"titleBlockName\":{\"type\":\"string\"}}}"),
                 args => _handler.Run(app => PipelineOps.CreateSheet(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.load_titleblock", "Create a .rfa from a title-block .rft template and load it", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"templatePath\":{\"type\":\"string\"},\"rfaPath\":{\"type\":\"string\"}},\"required\":[\"templatePath\",\"rfaPath\"]}"),
+                args => _handler.Run(app => SheetComposeOps.LoadTitleBlockTemplate(app, args as JObject ?? new JObject()), 180000));
             Register("pipeline.place_view", "Place a view on a sheet", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"viewId\":{\"type\":\"integer\"},\"xMm\":{\"type\":\"number\"},\"yMm\":{\"type\":\"number\"}},\"required\":[\"sheetId\",\"viewId\"]}"),
                 args => _handler.Run(app => PipelineOps.PlaceViewOnSheet(app, args as JObject ?? new JObject()), 120000));
@@ -238,6 +241,9 @@ namespace RevitBridge
             Register("pipeline.layout_sheet", "Crop views, choose sheet format/scale, pack plan + room explication and validate", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"titleBlockName\":{\"type\":\"string\"},\"number\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"viewIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}},\"scheduleIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}},\"marginMm\":{\"type\":\"number\"},\"gapMm\":{\"type\":\"number\"},\"bottomReserveMm\":{\"type\":\"number\"},\"cropMarginMm\":{\"type\":\"number\"},\"scale\":{\"type\":\"integer\"},\"clearSheet\":{\"type\":\"boolean\"}},\"required\":[\"viewIds\"]}"),
                 args => _handler.Run(app => SheetLayoutOps.LayoutSheet(app, args as JObject ?? new JObject()), 600000));
+            Register("pipeline.compose_sheet", "Compose a drawing sheet with duplicated views, safe box and box validation", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"titleBlockName\":{\"type\":\"string\"},\"number\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"marginMm\":{\"type\":\"number\"},\"gapMm\":{\"type\":\"number\"},\"stampReserveMm\":{\"type\":\"number\"},\"safeBoxMm\":{\"type\":\"array\"},\"cropMarginMm\":{\"type\":\"number\"},\"cropIncludeLinked\":{\"type\":\"boolean\"},\"clearSheet\":{\"type\":\"boolean\"},\"independentCopy\":{\"type\":\"boolean\"},\"drawFrame\":{\"type\":\"boolean\"},\"labelViews\":{\"type\":\"boolean\"},\"views\":{\"type\":\"array\"},\"schedules\":{\"type\":\"array\"}},\"required\":[\"views\"]}"),
+                args => _handler.Run(app => SheetComposeOps.ComposeSheet(app, args as JObject ?? new JObject()), 600000));
             Register("pipeline.list_title_blocks", "Measure title block formats (A4/A3/A2/A1) from the template", BridgeTransaction.Read, null,
                 args => _handler.Run(app => SheetLayoutOps.ListTitleBlocks(app, args as JObject ?? new JObject()), 120000));
             Register("pipeline.debug_spaces", "Debug space level ids, bounding boxes and locations", BridgeTransaction.Read, null,
