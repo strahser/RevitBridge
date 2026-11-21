@@ -209,6 +209,14 @@ namespace RevitBridge
             Register("pipeline.set_parameter", "Set any element/type parameter by name", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"elementId\":{\"type\":\"integer\"},\"name\":{\"type\":\"string\"},\"value\":{}},\"required\":[\"elementId\",\"name\",\"value\"]}"),
                 args => _handler.Run(app => PipelineOps.SetParameter(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.audit_model", "Collector audit: no existing pipes/fittings/equipment/generic models/systems", BridgeTransaction.Read,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"includeAnalysis\":{\"type\":\"boolean\"}}}"),
+                args => _handler.Run(app => AuditOps.AuditModel(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.purge_model_content", "Delete existing model content (pipes/fittings/equipment/generic models/systems) and re-audit", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"includeAnalysis\":{\"type\":\"boolean\"},\"dryRun\":{\"type\":\"boolean\"}}}"),
+                args => _handler.Run(app => AuditOps.PurgeModelContent(app, args as JObject ?? new JObject()), 600000));
+            Register("pipeline.reset_energy_analysis", "Delete Revit energy analysis detail model and its analytical spaces", BridgeTransaction.Write, null,
+                args => _handler.Run(app => AuditOps.ResetEnergyAnalysis(app, args as JObject ?? new JObject()), 300000));
             Register("pipeline.create_sheet", "Create a sheet", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"number\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"titleBlockName\":{\"type\":\"string\"}}}"),
                 args => _handler.Run(app => PipelineOps.CreateSheet(app, args as JObject ?? new JObject()), 120000));

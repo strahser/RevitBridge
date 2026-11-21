@@ -293,6 +293,8 @@ namespace RevitBridge
             var created = 0;
             var skipped = 0;
             var createdIds = new List<ElementId>();
+            var heightChecks = new List<Tuple<ElementId, long, string, double>>();
+            var fitHeight = args?.Value<bool?>("fitHeight") ?? true;
             using (var tx = new Transaction(doc, "Bridge Create Spaces"))
             {
                 tx.Start();
@@ -316,6 +318,26 @@ namespace RevitBridge
                             var space = doc.Create.NewSpace(level, phase, new UV(hostPoint.X, hostPoint.Y));
                             if (space == null) { skipped++; continue; }
                             try { space.Number = room.Number; space.Name = room.Name; } catch (Exception) { }
+
+                            // Height source: Room.UnboundedHeight, or Volume/Area when unbounded.
+                            var roomHeight = room.UnboundedHeight;
+                            if (!(roomHeight > 0) && room.Area > 0 && room.Volume > 0)
+                                roomHeight = room.Volume / room.Area;
+                            if (roomHeight > 0 && fitHeight)
+                            {
+                                try
+                                {
+                                    var upperOffset = space.get_Parameter(BuiltInParameter.ROOM_UPPER_OFFSET);
+                                    if (upperOffset != null && !upperOffset.IsReadOnly)
+                                        upperOffset.Set(roomHeight);
+                                    else
+                                        space.LimitOffset = roomHeight;
+                                }
+                                catch (Exception) { }
+                            }
+                            heightChecks.Add(Tuple.Create(space.Id, room.Id.Value,
+                                room.Number ?? "", roomHeight));
+
                             createdIds.Add(space.Id);
                             created++;
                         }
@@ -356,11 +378,53 @@ namespace RevitBridge
                 if (space != null && space.Area > 0) bounded++;
             }
 
+            // Height validator: Space.UnboundedHeight vs linked Room.UnboundedHeight (or V/A).
+            using (var regen = new Transaction(doc, "Bridge Regenerate Spaces"))
+            {
+                regen.Start();
+                doc.Regenerate();
+                regen.Commit();
+            }
+            var heightChecked = 0;
+            var heightMatched = 0;
+            var heightSkipped = 0;
+            var heightMismatches = new List<Dictionary<string, object>>();
+            foreach (var check in heightChecks)
+            {
+                var space = doc.GetElement(check.Item1) as Space;
+                if (space == null) { heightSkipped++; continue; }
+                var roomHeight = check.Item4;
+                if (!(roomHeight > 0)) { heightSkipped++; continue; }
+
+                heightChecked++;
+                var spaceHeight = space.UnboundedHeight;
+                var deltaMm = Math.Abs(spaceHeight - roomHeight) * 304.8;
+                if (deltaMm <= 10) heightMatched++;
+                else if (heightMismatches.Count < 20)
+                {
+                    heightMismatches.Add(new Dictionary<string, object>
+                    {
+                        { "spaceId", check.Item1.Value },
+                        { "roomId", check.Item2 },
+                        { "roomNumber", check.Item3 },
+                        { "roomHeightMm", roomHeight * 304.8 },
+                        { "spaceHeightMm", spaceHeight * 304.8 },
+                        { "deltaMm", deltaMm },
+                    });
+                }
+            }
+
+            var heightValid = heightChecked == 0 || heightMatched == heightChecked;
             return new Dictionary<string, object>
             {
                 { "created", created }, { "skipped", skipped },
                 { "bounded", bounded }, { "unbounded", created - bounded },
-                { "valid", created == 0 || bounded == created },
+                { "heightChecked", heightChecked }, { "heightMatched", heightMatched },
+                { "heightMismatched", heightChecked - heightMatched },
+                { "heightSkipped", heightSkipped },
+                { "heightMismatches", heightMismatches },
+                { "heightValid", heightValid },
+                { "valid", (created == 0 || bounded == created) && heightValid },
             };
         }
 
