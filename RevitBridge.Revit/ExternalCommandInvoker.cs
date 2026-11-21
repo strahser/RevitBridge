@@ -27,17 +27,34 @@ namespace RevitBridge
             var data = McpOps.ForgeCommandData(app);
             var message = "";
             var elements = new ElementSet();
-            var result = command.Execute(data, ref message, elements);
-            if (result == Result.Failed)
-                throw new InvalidOperationException(
-                    string.IsNullOrWhiteSpace(message) ? "Command failed: " + typeName : message);
 
-            return new Dictionary<string, object>
+            // Manifest commands are plain IExternalCommand instances; pass their JSON
+            // arguments through an environment variable (restored afterwards).
+            var previousArgs = Environment.GetEnvironmentVariable("REVIT_BRIDGE_ARGS_JSON");
+            var previousCommand = Environment.GetEnvironmentVariable("REVIT_BRIDGE_COMMAND");
+            try
             {
-                { "type", typeName },
-                { "result", result.ToString() },
-                { "message", message ?? "" },
-            };
+                Environment.SetEnvironmentVariable("REVIT_BRIDGE_ARGS_JSON",
+                    args == null ? "" : args.ToString(Newtonsoft.Json.Formatting.None));
+                Environment.SetEnvironmentVariable("REVIT_BRIDGE_COMMAND", typeName);
+
+                var result = command.Execute(data, ref message, elements);
+                if (result == Result.Failed)
+                    throw new InvalidOperationException(
+                        string.IsNullOrWhiteSpace(message) ? "Command failed: " + typeName : message);
+
+                return new Dictionary<string, object>
+                {
+                    { "type", typeName },
+                    { "result", result.ToString() },
+                    { "message", message ?? "" },
+                };
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("REVIT_BRIDGE_ARGS_JSON", previousArgs);
+                Environment.SetEnvironmentVariable("REVIT_BRIDGE_COMMAND", previousCommand);
+            }
         }
 
         private static Type ResolveType(string assemblyPath, string typeName)
