@@ -126,6 +126,44 @@ namespace RevitBridge
             Register("revit.close_document", "Close the active document", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"save\":{\"type\":\"boolean\"}}}"),
                 args => _handler.Run(app => McpOps.Close(app, args?.Value<bool?>("save") ?? false), 180000));
+
+            // Ported from RevitMcpServer command set (P4).
+            Register("revit.current_view_info", "Current view info", BridgeTransaction.Read, null,
+                args => _handler.Run(app => ExtendedOps.CurrentViewInfo(app), 60000));
+            Register("revit.current_view_elements", "Elements in the current view", BridgeTransaction.Read,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"categories\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"limit\":{\"type\":\"integer\"}}}"),
+                args => _handler.Run(app => ExtendedOps.CurrentViewElements(app, args as JObject ?? new JObject()), 60000));
+            Register("revit.selected_elements", "Currently selected elements", BridgeTransaction.Read,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\"}}}"),
+                args => _handler.Run(app => ExtendedOps.SelectedElements(app, args as JObject ?? new JObject()), 60000));
+            Register("revit.tag_walls", "Tag walls in the current view", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\"}}}"),
+                args => _handler.Run(app => ExtendedOps.TagWalls(app, args as JObject ?? new JObject()), 120000));
+            Register("revit.tag_rooms", "Tag rooms in the current view", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\"}}}"),
+                args => _handler.Run(app => ExtendedOps.TagRooms(app, args as JObject ?? new JObject()), 120000));
+            Register("revit.model_statistics", "Model statistics by category/type/level", BridgeTransaction.Read, null,
+                args => _handler.Run(app => ExtendedOps.ModelStatistics(app, args as JObject ?? new JObject()), 120000));
+            Register("revit.material_quantities", "Material areas and volumes", BridgeTransaction.Read, null,
+                args => _handler.Run(app => ExtendedOps.MaterialQuantities(app, args as JObject ?? new JObject()), 120000));
+            Register("revit.ai_element_filter", "Filter elements by category/level/type/parameter", BridgeTransaction.Read,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"category\":{\"type\":\"string\"},\"level\":{\"type\":\"string\"},\"typeName\":{\"type\":\"string\"},\"parameterName\":{\"type\":\"string\"},\"parameterValue\":{\"type\":\"string\"},\"limit\":{\"type\":\"integer\"}}}"),
+                args => _handler.Run(app => ExtendedOps.FilterElements(app, args as JObject ?? new JObject()), 60000));
+            Register("revit.operate_element", "Select/color/hide/isolate elements", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\"},\"ids\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}},\"color\":{\"type\":\"string\"}},\"required\":[\"action\",\"ids\"]}"),
+                args => _handler.Run(app => ExtendedOps.OperateElement(app, args as JObject ?? new JObject()), 60000));
+            Register("revit.color_splash", "Color elements by a parameter value", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"parameterName\":{\"type\":\"string\"}},\"required\":[\"parameterName\"]}"),
+                args => _handler.Run(app => ExtendedOps.ColorSplash(app, args as JObject ?? new JObject()), 120000));
+            Register("revit.create_dimensions", "Create a linear dimension between two elements", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"elementId1\":{\"type\":\"integer\"},\"elementId2\":{\"type\":\"integer\"},\"offsetMm\":{\"type\":\"number\"}},\"required\":[\"elementId1\",\"elementId2\"]}"),
+                args => _handler.Run(app => ExtendedOps.CreateDimensions(app, args as JObject ?? new JObject()), 60000));
+            Register("revit.create_structural_framing", "Create a structural framing grid", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"levelId\":{\"type\":\"integer\"},\"startMm\":{\"type\":\"array\"},\"endMm\":{\"type\":\"array\"},\"spacingMm\":{\"type\":\"number\"},\"count\":{\"type\":\"integer\"}},\"required\":[\"levelId\",\"startMm\",\"endMm\"]}"),
+                args => _handler.Run(app => ExtendedOps.CreateStructuralFraming(app, args as JObject ?? new JObject()), 120000));
+            Register("revit.create_line_element", "Create a wall/pipe/duct by two points", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"kind\":{\"type\":\"string\"},\"startMm\":{\"type\":\"array\"},\"endMm\":{\"type\":\"array\"}},\"required\":[\"kind\",\"startMm\",\"endMm\"]}"),
+                args => _handler.Run(app => ExtendedOps.CreateLineElement(app, args as JObject ?? new JObject()), 120000));
         }
 
         private void LoadManifests()
