@@ -102,51 +102,61 @@ namespace RevitBridge
 
         private void LoadManifests()
         {
-            var configured = Environment.GetEnvironmentVariable("REVIT_BRIDGE_MANIFESTS");
-            var roots = string.IsNullOrWhiteSpace(configured)
-                ? new[] { @"D:\Projects\01-bim", @"D:\Projects\04-network", @"D:\Projects\03-heating" }
-                : configured.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
-
+            var roots = ResolveManifestRoots();
             var manifests = BridgeManifestLoader.LoadFromRoots(roots);
             foreach (var loaded in manifests)
             {
                 var assemblyPath = BridgeManifestLoader.ResolveAssemblyPath(loaded);
-                if (!string.IsNullOrWhiteSpace(assemblyPath))
-                {
-                    var directory = Path.GetDirectoryName(assemblyPath);
-                    if (!string.IsNullOrWhiteSpace(directory))
-                    {
-                        lock (ProbeLock)
-                        {
-                            if (!ProbeDirectories.Contains(directory))
-                                ProbeDirectories.Add(directory);
-                        }
+                RegisterProbeDirectory(assemblyPath);
+                RegisterManifestCommands(loaded, assemblyPath);
+            }
+        }
 
-                        // Preload sibling assemblies so a plugin loaded from bytes can
-                        // resolve its own dependencies (Domain/Application/Infrastructure).
-                        try
-                        {
-                            foreach (var dll in Directory.GetFiles(directory, "*.dll"))
-                            {
-                                try { Assembly.Load(File.ReadAllBytes(dll)); }
-                                catch (Exception) { }
-                            }
-                        }
-                        catch (Exception) { }
-                    }
+        private static string[] ResolveManifestRoots()
+        {
+            var configured = Environment.GetEnvironmentVariable("REVIT_BRIDGE_MANIFESTS");
+            return string.IsNullOrWhiteSpace(configured)
+                ? new[] { @"D:\Projects\01-bim", @"D:\Projects\04-network", @"D:\Projects\03-heating" }
+                : configured.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+        }
+
+        private void RegisterProbeDirectory(string assemblyPath)
+        {
+            if (string.IsNullOrWhiteSpace(assemblyPath)) return;
+            var directory = Path.GetDirectoryName(assemblyPath);
+            if (string.IsNullOrWhiteSpace(directory)) return;
+
+            lock (ProbeLock)
+            {
+                if (!ProbeDirectories.Contains(directory))
+                    ProbeDirectories.Add(directory);
+            }
+
+            // Preload sibling assemblies so a plugin loaded from bytes can
+            // resolve its own dependencies (Domain/Application/Infrastructure).
+            try
+            {
+                foreach (var dll in Directory.GetFiles(directory, "*.dll"))
+                {
+                    try { Assembly.Load(File.ReadAllBytes(dll)); }
+                    catch (Exception) { }
                 }
+            }
+            catch (Exception) { }
+        }
 
-                foreach (var spec in loaded.Manifest.Commands)
+        private void RegisterManifestCommands(LoadedBridgeManifest loaded, string assemblyPath)
+        {
+            foreach (var spec in loaded.Manifest.Commands)
+            {
+                if (string.IsNullOrWhiteSpace(spec.Name) || string.IsNullOrWhiteSpace(spec.Type)) continue;
+                try
                 {
-                    if (string.IsNullOrWhiteSpace(spec.Name) || string.IsNullOrWhiteSpace(spec.Type)) continue;
-                    try
-                    {
-                        RegisterManifestCommand(loaded, spec, assemblyPath);
-                    }
-                    catch (Exception)
-                    {
-                        // Duplicate or broken command must not break the whole bridge.
-                    }
+                    RegisterManifestCommand(loaded, spec, assemblyPath);
+                }
+                catch (Exception)
+                {
+                    // Duplicate or broken command must not break the whole bridge.
                 }
             }
         }
