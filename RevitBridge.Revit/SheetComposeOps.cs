@@ -423,65 +423,30 @@ namespace RevitBridge
             // Phase 5: final validation on real boxes.
             Measure(doc, sheet, originX, originY, items);
             var tolerance = 1.0; // mm
-            var outside = new List<Dictionary<string, object>>();
-            var overlaps = new List<Dictionary<string, object>>();
-            var forbidden = new List<Dictionary<string, object>>();
-            var stamp = new Rect { Name = "stamp", X0 = 0, Y0 = 0, X1 = sheetW, Y1 = safe.Y0 };
-            var grif = new Rect { Name = "leftGrif", X0 = 0, Y0 = 0, X1 = safe.X0, Y1 = sheetH };
+            var validationItems = items.Where(i => i.InstanceId != null && i.W > 0)
+                .Select(i => new SheetValidation.Box(i.Name, i.X, i.Y - i.H, i.X + i.W, i.Y))
+                .ToList();
+            var validation = SheetValidation.Validate(
+                validationItems,
+                new SheetValidation.Box("usable", usable.X0, usable.Y0, usable.X1, usable.Y1),
+                new SheetValidation.Box("safe", safe.X0, safe.Y0, safe.X1, safe.Y1),
+                sheetW, sheetH, tolerance);
 
-            foreach (var item in items.Where(i => i.InstanceId != null && i.W > 0))
+            // Keep the JSON shape (keys, types and order) exactly as before.
+            var outside = validation.Outside.Select(e => new Dictionary<string, object>
             {
-                var r = new Rect { Name = item.Name, X0 = item.X, Y0 = item.Y - item.H,
-                                   X1 = item.X + item.W, Y1 = item.Y };
-                if (r.X0 < usable.X0 - tolerance || r.Y0 < usable.Y0 - tolerance ||
-                    r.X1 > usable.X1 + tolerance || r.Y1 > usable.Y1 + tolerance)
-                {
-                    outside.Add(new Dictionary<string, object>
-                    {
-                        { "name", r.Name },
-                        { "rect", new[] { r.X0, r.Y0, r.X1, r.Y1 } },
-                        { "usable", new[] { usable.X0, usable.Y0, usable.X1, usable.Y1 } },
-                    });
-                }
-                foreach (var zone in new[] { stamp, grif })
-                {
-                    var ox = Math.Min(r.X1, zone.X1) - Math.Max(r.X0, zone.X0);
-                    var oy = Math.Min(r.Y1, zone.Y1) - Math.Max(r.Y0, zone.Y0);
-                    if (ox > tolerance && oy > tolerance)
-                        forbidden.Add(new Dictionary<string, object>
-                        {
-                            { "name", r.Name }, { "zone", zone.Name },
-                            { "overlapMm2", ox * oy },
-                        });
-                }
-            }
-
-            var measured = items.Where(i => i.InstanceId != null && i.W > 0)
-                .Select(i => new
-                {
-                    Item = i,
-                    Rect = new Rect
-                    {
-                        Name = i.Name,
-                        X0 = i.X, Y0 = i.Y - i.H, X1 = i.X + i.W, Y1 = i.Y,
-                    },
-                }).ToList();
-            for (var a = 0; a < measured.Count; a++)
+                { "name", e.Name },
+                { "rect", e.Rect },
+                { "usable", e.Usable },
+            }).ToList();
+            var forbidden = validation.Forbidden.Select(e => new Dictionary<string, object>
             {
-                for (var b = a + 1; b < measured.Count; b++)
-                {
-                    var ra = measured[a].Rect;
-                    var rb = measured[b].Rect;
-                    var ox = Math.Min(ra.X1, rb.X1) - Math.Max(ra.X0, rb.X0);
-                    var oy = Math.Min(ra.Y1, rb.Y1) - Math.Max(ra.Y0, rb.Y0);
-                    if (ox > tolerance && oy > tolerance)
-                        overlaps.Add(new Dictionary<string, object>
-                        {
-                            { "a", ra.Name }, { "b", rb.Name },
-                            { "overlapMm2", ox * oy },
-                        });
-                }
-            }
+                { "name", e.Name }, { "zone", e.Zone }, { "overlapMm2", e.OverlapMm2 },
+            }).ToList();
+            var overlaps = validation.Overlaps.Select(e => new Dictionary<string, object>
+            {
+                { "a", e.A }, { "b", e.B }, { "overlapMm2", e.OverlapMm2 },
+            }).ToList();
 
             var sourceViewsUnchanged = true;
             foreach (var pair in sourceBaseline)
