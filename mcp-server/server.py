@@ -174,6 +174,7 @@ def _dynamic_tools():
                 command.get("description") or command.get("name"),
                 command.get("name")),
             "inputSchema": schema,
+            "annotations": _dynamic_annotations(command, tool_name),
         })
     return result
 
@@ -297,6 +298,7 @@ def _refresh_child_tools(force=False):
                 "name": name,
                 "description": "[DwgParser] " + (tool.get("description") or original),
                 "inputSchema": tool.get("inputSchema") or {"type": "object", "properties": {}},
+                "annotations": _child_annotations(name),
             }
             tool_map[name] = original
         _CHILD_TOOLS = mapping
@@ -313,6 +315,140 @@ def _child_tools():
 
 import atexit
 atexit.register(_stop_child)
+
+
+# ---------------------------------------------------------------- tool policy (P1.3/P1.5/P1.6)
+# C# now serves GET only: every HTTP POST is rejected with 403 legacy_write_disabled.
+# Static tools must therefore never silently issue a POST. The six static tools that
+# have a first-class WS command are migrated to WS; the remaining write tools are
+# blocked at the MCP facade with a structured, actionable error.
+
+_WRITE_TOKENS = (
+    "create_", "set_", "delete_", "place_", "load_", "move_", "rotate_",
+    "copy_", "mirror_", "cut_", "backup_", "undo_", "run_heatloss",
+    "open_document", "close_document",
+    # Residual static POST endpoints (no WS command yet).
+    "duplicate_", "export_", "modify_", "refresh_", "connect_", "dry_run",
+)
+_READ_TOKENS = (
+    "ping", "doc_info", "list_", "get_", "query_", "measure_",
+    "get_bounding_box", "commands",
+)
+_DESTRUCTIVE_TOKENS = ("delete", "clear", "purge", "reset", "close")
+_IDEMPOTENT_TOKENS = ("ping", "doc_info", "list_", "get_", "query_", "measure_")
+
+
+def is_static_write(name):
+    """Classify a static tool name as a write (mutation) or a read."""
+    if any(token in name for token in _WRITE_TOKENS):
+        return True
+    if any(token in name for token in _READ_TOKENS):
+        return False
+    # Generic dispatchers (bridge_call / revit_call / bridge_status) and
+    # unclassified helpers stay readable: blocking them would remove the
+    # documented WS escape hatch. Residual POST-only outliers are reported.
+    return False
+
+
+def _is_destructive(name):
+    return any(token in name for token in _DESTRUCTIVE_TOKENS)
+
+
+def _is_idempotent(name):
+    return any(token in name for token in _IDEMPOTENT_TOKENS)
+
+
+def _annotations(read_only, destructive=False, idempotent=False, open_world=False):
+    return {
+        "readOnlyHint": bool(read_only),
+        "destructiveHint": bool(destructive),
+        "idempotentHint": bool(idempotent),
+        "openWorldHint": bool(open_world),
+    }
+
+
+# Generic WS dispatchers can invoke any command, including writes. They must
+# stay callable, but must not advertise themselves as read-only.
+_GENERIC_DISPATCHERS = frozenset({"bridge_call", "revit_call"})
+
+
+def _static_annotations(name):
+    if name in _GENERIC_DISPATCHERS:
+        return _annotations(read_only=False, destructive=True, idempotent=False)
+    return _annotations(
+        read_only=not is_static_write(name),
+        destructive=_is_destructive(name),
+        idempotent=_is_idempotent(name),
+    )
+
+
+def _dynamic_annotations(command, tool_name=None):
+    # C# CommandDescriptor.safety is authoritative when present; otherwise fall
+    # back to transaction + name heuristics.
+    safety = command.get("safety")
+    safety = safety if isinstance(safety, dict) else {}
+    read = command.get("transaction") == "read"
+    return _annotations(
+        read_only=safety.get("readOnly", read),
+        destructive=safety.get(
+            "destructive", _is_destructive(tool_name or command.get("name") or "")
+        ),
+        idempotent=safety.get("idempotent", read),
+        open_world=safety.get("openWorld", False),
+    )
+
+
+def _child_annotations(name):
+    # Names are stored with the "dwg_" proxy prefix; classify the bare name.
+    bare = name[len("dwg_"):] if name.startswith("dwg_") else name
+    read = bare.startswith(("list_", "get_", "ping", "verify_", "find_"))
+    return _annotations(read_only=read,
+                        destructive=_is_destructive(bare),
+                        idempotent=read)
+
+
+def legacy_write_error(name):
+    """Structured error returned instead of calling the HTTP POST endpoints."""
+    return {
+        "error": "legacy_write_disabled",
+        "tool": name,
+        "hint": "Use WS cmd_* / tools_call; legacy HTTP writes are closed.",
+    }
+
+
+def _map_no_args(args):
+    return {}
+
+
+def _map_open_document(args):
+    # Static schema uses ``detach_from_central``; WS command expects ``detach``.
+    return {
+        "path": args.get("path") or DEFAULT_MODEL,
+        "detach": bool(args.get("detach_from_central", args.get("detach", False))),
+        "audit": bool(args.get("audit", False)),
+    }
+
+
+def _map_close_document(args):
+    return {"save": bool(args.get("save", False))}
+
+
+def _map_list_rooms(args):
+    return {
+        "limit": max(1, min(500, int(args.get("limit") or 50))),
+        "offset": max(0, int(args.get("offset") or 0)),
+    }
+
+
+# Static name -> (WS command, argument mapper). These never touch HTTP POST.
+WS_STATIC_MAP = {
+    "revit_ping": ("revit.ping", _map_no_args),
+    "revit_open_document": ("revit.open_document", _map_open_document),
+    "revit_close_document": ("revit.close_document", _map_close_document),
+    "revit_doc_info": ("revit.doc_info", _map_no_args),
+    "revit_list_levels": ("revit.list_levels", _map_no_args),
+    "revit_list_rooms": ("revit.list_rooms", _map_list_rooms),
+}
 
 
 TOOLS = [
@@ -439,9 +575,21 @@ TOOLS = [
     {"name": "revit_create_duct", "description": "Create a duct.", "inputSchema": {"type": "object", "properties": {"system_type": {"type": "string"}, "duct_type": {"type": "string"}, "level_id": {"type": "integer"}, "start_mm": {"type": "array"}, "end_mm": {"type": "array"}, "width_mm": {"type": "number"}, "height_mm": {"type": "number"}}, "required": ["level_id", "start_mm", "end_mm"]}},
 ]
 
+# Every static tool carries MCP annotations derived from its name/policy.
+_STATIC_TOOL_NAMES = frozenset(tool["name"] for tool in TOOLS)
+for _tool in TOOLS:
+    _tool["annotations"] = _static_annotations(_tool["name"])
+
 
 def tool_call(name, args):
     args = args or {}
+    # Static tool policy: migrated tools go to WS, the rest of the writes are
+    # rejected before any dispatch (no _api / HTTP call is attempted).
+    if name in WS_STATIC_MAP:
+        command, mapper = WS_STATIC_MAP[name]
+        return _bridge_call("call", {"command": command, "args": mapper(args)}, timeout=180)
+    if name in _STATIC_TOOL_NAMES and is_static_write(name):
+        return legacy_write_error(name)
     if name.startswith("cmd_"):
         _refresh_bridge_tools()
     if name == "bridge_ping":
@@ -465,37 +613,9 @@ def tool_call(name, args):
         _refresh_child_tools(force=True)
     if name in _CHILD_TOOL_MAP:
         return _child_request("tools/call", {"name": _CHILD_TOOL_MAP[name], "arguments": args}, timeout=300)
-    if name == "revit_ping":
-        return _api("GET", "/ping", timeout=15)
-    if name == "revit_open_document":
-        path = args.get("path") or DEFAULT_MODEL
-        launch = args.get("launch_if_needed", True)
-        wait_sec = int(args.get("wait_sec") or 300)
-        if launch and not _ping_ok():
-            _launch_revit(path)
-            deadline = time.time() + wait_sec
-            while time.time() < deadline:
-                time.sleep(5)
-                if _ping_ok():
-                    break
-            else:
-                raise RuntimeError("Timed out waiting for Revit bridge after launch")
-        return _api("POST", "/open",
-                    {"path": path,
-                     "detach": bool(args.get("detach_from_central", False)),
-                     "audit": bool(args.get("audit", False))},
-                    timeout=600)
-    if name == "revit_close_document":
-        return _api("POST", "/close", {"save": bool(args.get("save", False))}, timeout=180)
-    if name == "revit_doc_info":
-        return _api("GET", "/doc", timeout=120)
-    if name == "revit_list_rooms":
-        limit = max(1, min(500, int(args.get("limit") or 50)))
-        offset = max(0, int(args.get("offset") or 0))
-        q = urllib.parse.urlencode({"limit": limit, "offset": offset})
-        return _api("GET", "/rooms?%s" % q, timeout=120)
-    if name == "revit_list_levels":
-        return _api("GET", "/levels", timeout=60)
+    # NOTE: revit_ping / revit_open_document / revit_close_document /
+    # revit_doc_info / revit_list_levels / revit_list_rooms are handled by
+    # WS_STATIC_MAP above (WS commands only; no HTTP GET/POST at all).
     if name == "revit_commands":
         return _api("GET", "/commands", timeout=30)
     if name == "revit_run_heatloss":
@@ -624,6 +744,9 @@ def handle(msg):
             result = tool_call(params.get("name"), params.get("arguments"))
             if isinstance(result, dict) and "content" in result and "isError" in result:
                 return result
+            if isinstance(result, dict) and result.get("error") == "legacy_write_disabled":
+                return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}],
+                        "isError": True}
             return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}],
                     "isError": False}
         except Exception as e:
