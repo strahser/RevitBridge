@@ -385,10 +385,11 @@ def _static_annotations(name):
 def _dynamic_annotations(command, tool_name=None):
     # C# CommandDescriptor.safety is authoritative when present; otherwise fall
     # back to transaction + name heuristics.
-    safety = command.get("safety")
-    safety = safety if isinstance(safety, dict) else {}
+    raw_safety = command.get("safety")
+    has_safety = isinstance(raw_safety, dict)
+    safety = raw_safety if has_safety else {}
     read = command.get("transaction") == "read"
-    return _annotations(
+    annotations = _annotations(
         read_only=safety.get("readOnly", read),
         destructive=safety.get(
             "destructive", _is_destructive(tool_name or command.get("name") or "")
@@ -396,6 +397,17 @@ def _dynamic_annotations(command, tool_name=None):
         idempotent=safety.get("idempotent", read),
         open_world=safety.get("openWorld", False),
     )
+    if has_safety:
+        # Extra keys consumed by the internal gateway policy (P2). MCP clients
+        # ignore unknown annotation fields.
+        annotations["writesDocument"] = bool(
+            safety.get("writesDocument", not bool(safety.get("readOnly", False)))
+        )
+        annotations["requiresConfirmation"] = bool(
+            safety.get("requiresConfirmation", bool(safety.get("destructive", False)))
+        )
+        annotations["backupRequired"] = bool(safety.get("backupRequired", False))
+    return annotations
 
 
 def _child_annotations(name):

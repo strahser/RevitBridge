@@ -261,7 +261,60 @@ class DynamicAndChildAnnotationTests(unittest.TestCase):
         self.assertIs(annotations["destructiveHint"], True)
         self.assertIs(annotations["idempotentHint"], False)
         self.assertIs(annotations["openWorldHint"], True)
-        self.assertEqual(set(annotations), ANNOTATION_KEYS)
+        self.assertTrue(ANNOTATION_KEYS.issubset(annotations))
+        self.assertIs(annotations["writesDocument"], True)
+        self.assertIs(annotations["requiresConfirmation"], True)
+        self.assertIs(annotations["backupRequired"], True)
+
+    def test_dynamic_safety_writes_document_false(self):
+        # transaction=write but C# says the command does not touch the document
+        # (e.g. pipeline.export_sheet_pdf): P2 must see writesDocument=False.
+        fake = {
+            "cmd_x": {
+                "name": "pipeline.export_sheet_pdf",
+                "transaction": "write",
+                "description": "fake",
+                "argsSchema": {"type": "object", "properties": {}},
+                "safety": {
+                    "readOnly": False,
+                    "writesDocument": False,
+                    "destructive": False,
+                    "requiresConfirmation": False,
+                    "backupRequired": False,
+                    "idempotent": True,
+                    "openWorld": False,
+                },
+            },
+        }
+        with mock.patch.object(server, "_BRIDGE_TOOLS", fake), \
+             mock.patch.object(server, "_BRIDGE_TOOLS_AT", time.time()):
+            tools = server._dynamic_tools()
+        annotations = next(t for t in tools if t["name"] == "cmd_x")["annotations"]
+        self.assertIs(annotations["readOnlyHint"], False)
+        self.assertIs(annotations["writesDocument"], False)
+        self.assertIs(annotations["destructiveHint"], False)
+        self.assertIs(annotations["requiresConfirmation"], False)
+
+    def test_dynamic_safety_destructive_defaults_confirmation(self):
+        fake = {
+            "cmd_x": {
+                "name": "revit.delete_wall",
+                "transaction": "write",
+                "description": "fake",
+                "argsSchema": {"type": "object", "properties": {}},
+                "safety": {"readOnly": False, "destructive": True},
+            },
+        }
+        with mock.patch.object(server, "_BRIDGE_TOOLS", fake), \
+             mock.patch.object(server, "_BRIDGE_TOOLS_AT", time.time()):
+            tools = server._dynamic_tools()
+        annotations = next(t for t in tools if t["name"] == "cmd_x")["annotations"]
+        self.assertIs(annotations["destructiveHint"], True)
+        self.assertIs(annotations["requiresConfirmation"], True)
+        # Defaults when safety omits the fields and readOnly is false.
+        self.assertIs(annotations["writesDocument"], True)
+        self.assertIs(annotations["backupRequired"], False)
+        self.assertIs(annotations["openWorldHint"], False)
 
     def test_child_annotations_and_schema_preserved(self):
         schema = {"type": "object", "properties": {"pattern": {"type": "string"}}}
