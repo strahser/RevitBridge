@@ -17,74 +17,74 @@ namespace RevitBridge.Commands
         {
             registrar.Add("pipeline.list_views", "List views and view templates", BridgeTransaction.Read,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"includeTemplates\":{\"type\":\"boolean\"}}}"),
-                (app, args) => PipelineOps.ListViews(app, args as JObject ?? new JObject()), 60000);
+                (app, args) => ViewSheetOps.ListViews(app, args as JObject ?? new JObject()), 60000);
 
             registrar.Add("pipeline.list_sheets", "List sheets", BridgeTransaction.Read, null,
-                (app, args) => PipelineOps.ListSheets(app, args as JObject ?? new JObject()), 60000);
+                (app, args) => ViewSheetOps.ListSheets(app, args as JObject ?? new JObject()), 60000);
 
             registrar.Add("pipeline.clear_model", "Delete links/spaces/model/created floor views, keep schedules/sheets/templates/levels/grids", BridgeTransaction.Write, null,
-                (app, args) => PipelineOps.ClearModel(app, args as JObject ?? new JObject()), 600000);
+                (app, args) => ModelOps.ClearModel(app, args as JObject ?? new JObject()), 600000);
 
             registrar.Add("pipeline.set_link_room_bounding", "Enable/disable Room Bounding on Revit link types", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"linkTypeId\":{\"type\":\"integer\"},\"enabled\":{\"type\":\"boolean\"}}}"),
-                (app, args) => PipelineOps.SetLinkRoomBounding(app, args as JObject ?? new JObject()), 120000);
+                (app, args) => ModelOps.SetLinkRoomBounding(app, args as JObject ?? new JObject()), 120000);
 
             registrar.Add("pipeline.regenerate", "Regenerate the active document", BridgeTransaction.Read, null,
-                (app, args) => PipelineOps.Regenerate(app, args as JObject ?? new JObject()), 60000);
+                (app, args) => ModelOps.Regenerate(app, args as JObject ?? new JObject()), 60000);
 
             registrar.Add("pipeline.link_revit", "Link an AR .rvt model", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}"),
-                (app, args) => PipelineOps.LinkRevit(app, args as JObject ?? new JObject()), 300000);
+                (app, args) => ModelOps.LinkRevit(app, args as JObject ?? new JObject()), 300000);
 
             registrar.Add("pipeline.create_spaces", "Create MEP spaces from linked rooms (or plan circuits) and validate Area>0", BridgeTransaction.Write, null,
-                (app, args) => PipelineOps.CreateSpaces(app, args as JObject ?? new JObject()), 300000);
+                (app, args) => ModelOps.CreateSpaces(app, args as JObject ?? new JObject()), 300000);
 
             registrar.Add("pipeline.delete_spaces", "Delete MEP spaces (OST_MEP_SPACES) and validate no leftovers", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"ids\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}}}}"),
-                (app, args) => PipelineOps.DeleteSpaces(app, args as JObject ?? new JObject()), 300000);
+                (app, args) => ModelOps.DeleteSpaces(app, args as JObject ?? new JObject()), 300000);
 
             registrar.Add("pipeline.create_plan_view", "Create a floor plan view and apply a view template", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"levelId\":{\"type\":\"integer\"},\"name\":{\"type\":\"string\"},\"templateName\":{\"type\":\"string\"}},\"required\":[\"levelId\"]}"),
-                (app, args) => PipelineOps.CreatePlanView(app, args as JObject ?? new JObject()), 120000);
+                (app, args) => ModelOps.CreatePlanView(app, args as JObject ?? new JObject()), 120000);
 
             registrar.Add("pipeline.delete_views", "Delete views by ids", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"ids\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}}},\"required\":[\"ids\"]}"),
-                (app, args) => PipelineOps.DeleteViews(app, args as JObject ?? new JObject()), 120000);
+                (app, args) => ModelOps.DeleteViews(app, args as JObject ?? new JObject()), 120000);
 
             registrar.Add("pipeline.connect_terminal_duct", "Connect an air terminal to a duct", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"terminalId\":{\"type\":\"integer\"},\"ductId\":{\"type\":\"integer\"}},\"required\":[\"terminalId\",\"ductId\"]}"),
-                (app, args) => PipelineOps.ConnectTerminalToDuct(app, args as JObject ?? new JObject()), 120000);
+                (app, args) => MepOps.ConnectTerminalToDuct(app, args as JObject ?? new JObject()), 120000);
 
             registrar.Add("pipeline.create_system", "Create a mechanical system and add elements", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"typeName\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"elementIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}}}}"),
-                (app, args) => PipelineOps.CreateMechanicalSystem(app, args as JObject ?? new JObject()), 120000);
+                (app, args) => MepOps.CreateMechanicalSystem(app, args as JObject ?? new JObject()), 120000);
 
             registrar.Add("pipeline.place_air_terminal", "Place an air terminal on a level and report its connectors", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"familyName\":{\"type\":\"string\"},\"typeName\":{\"type\":\"string\"},\"levelId\":{\"type\":\"integer\"},\"xMm\":{\"type\":\"number\"},\"yMm\":{\"type\":\"number\"},\"zMm\":{\"type\":\"number\"},\"rotationDeg\":{\"type\":\"number\"}}}"),
-                (app, args) => PipelineOps.PlaceAirTerminal(app, args as JObject ?? new JObject()), 120000);
+                (app, args) => MepOps.PlaceAirTerminal(app, args as JObject ?? new JObject()), 120000);
 
             registrar.Add("pipeline.list_systems", "List mechanical system instances and member counts", BridgeTransaction.Read, null,
-                (app, args) => PipelineOps.ListMechanicalSystems(app, args as JObject ?? new JObject()), 60000);
+                (app, args) => MepOps.ListMechanicalSystems(app, args as JObject ?? new JObject()), 60000);
 
             registrar.Add("pipeline.validate_system", "Validate a mechanical system: members, classification, flow, connectivity", BridgeTransaction.Read,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"systemId\":{\"type\":\"integer\"},\"name\":{\"type\":\"string\"}}}"),
-                (app, args) => PipelineOps.ValidateSystem(app, args as JObject ?? new JObject()), 60000);
+                (app, args) => MepOps.ValidateSystem(app, args as JObject ?? new JObject()), 60000);
 
             registrar.Add("pipeline.get_schedule", "Read schedule table data (header + rows) natively", BridgeTransaction.Read,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"scheduleId\":{\"type\":\"integer\"},\"maxRows\":{\"type\":\"integer\"}},\"required\":[\"scheduleId\"]}"),
-                (app, args) => PipelineOps.GetScheduleData(app, args as JObject ?? new JObject()), 60000);
+                (app, args) => ScheduleOps.GetScheduleData(app, args as JObject ?? new JObject()), 60000);
 
             registrar.Add("pipeline.set_parameter", "Set any element/type parameter by name", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"elementId\":{\"type\":\"integer\"},\"name\":{\"type\":\"string\"},\"value\":{}},\"required\":[\"elementId\",\"name\",\"value\"]}"),
-                (app, args) => PipelineOps.SetParameter(app, args as JObject ?? new JObject()), 120000);
+                (app, args) => ParameterOps.SetParameter(app, args as JObject ?? new JObject()), 120000);
 
             registrar.Add("pipeline.set_view_scale", "Set a view scale directly (View.Scale)", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"viewId\":{\"type\":\"integer\"},\"scale\":{\"type\":\"integer\"}},\"required\":[\"viewId\",\"scale\"]}"),
-                (app, args) => PipelineOps.SetViewScale(app, args as JObject ?? new JObject()), 60000);
+                (app, args) => ViewSheetOps.SetViewScale(app, args as JObject ?? new JObject()), 60000);
 
             registrar.Add("pipeline.set_view_crop", "Set a rectangular view crop (minMm/maxMm)", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"viewId\":{\"type\":\"integer\"},\"minMm\":{\"type\":\"array\"},\"maxMm\":{\"type\":\"array\"}},\"required\":[\"viewId\",\"minMm\",\"maxMm\"]}"),
-                (app, args) => PipelineOps.SetViewCrop(app, args as JObject ?? new JObject()), 60000);
+                (app, args) => ViewSheetOps.SetViewCrop(app, args as JObject ?? new JObject()), 60000);
 
             registrar.Add("pipeline.audit_model", "Collector audit: no existing pipes/fittings/equipment/generic models/systems", BridgeTransaction.Read,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"includeAnalysis\":{\"type\":\"boolean\"}}}"),
@@ -99,15 +99,15 @@ namespace RevitBridge.Commands
 
             registrar.Add("pipeline.create_sheet", "Create a sheet", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"number\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"titleBlockName\":{\"type\":\"string\"},\"titleBlockFamily\":{\"type\":\"string\"}}}"),
-                (app, args) => PipelineOps.CreateSheet(app, args as JObject ?? new JObject()), 120000);
+                (app, args) => ViewSheetOps.CreateSheet(app, args as JObject ?? new JObject()), 120000);
 
             registrar.Add("pipeline.place_view", "Place a view on a sheet", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"viewId\":{\"type\":\"integer\"},\"xMm\":{\"type\":\"number\"},\"yMm\":{\"type\":\"number\"}},\"required\":[\"sheetId\",\"viewId\"]}"),
-                (app, args) => PipelineOps.PlaceViewOnSheet(app, args as JObject ?? new JObject()), 120000);
+                (app, args) => ViewSheetOps.PlaceViewOnSheet(app, args as JObject ?? new JObject()), 120000);
 
             registrar.Add("pipeline.place_schedule", "Place a schedule on a sheet", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"scheduleId\":{\"type\":\"integer\"},\"xMm\":{\"type\":\"number\"},\"yMm\":{\"type\":\"number\"}},\"required\":[\"sheetId\",\"scheduleId\"]}"),
-                (app, args) => PipelineOps.PlaceScheduleOnSheet(app, args as JObject ?? new JObject()), 120000);
+                (app, args) => ViewSheetOps.PlaceScheduleOnSheet(app, args as JObject ?? new JObject()), 120000);
 
             registrar.Add("pipeline.layout_sheet", "Crop views, choose sheet format/scale, pack plan + room explication and validate", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"titleBlockName\":{\"type\":\"string\"},\"number\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"viewIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}},\"scheduleIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}},\"marginMm\":{\"type\":\"number\"},\"gapMm\":{\"type\":\"number\"},\"bottomReserveMm\":{\"type\":\"number\"},\"cropMarginMm\":{\"type\":\"number\"},\"scale\":{\"type\":\"integer\"},\"clearSheet\":{\"type\":\"boolean\"}},\"required\":[\"viewIds\"]}"),
@@ -137,7 +137,7 @@ namespace RevitBridge.Commands
 
             registrar.Add("pipeline.export_sheet_pdf", "Export a sheet to PDF", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"path\":{\"type\":\"string\"}},\"required\":[\"sheetId\",\"path\"]}"),
-                (app, args) => PipelineOps.ExportSheetPdf(app, args as JObject ?? new JObject()), 300000,
+                (app, args) => ViewSheetOps.ExportSheetPdf(app, args as JObject ?? new JObject()), 300000,
                 FileExportSafety());
         }
 
