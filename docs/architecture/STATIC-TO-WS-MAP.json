@@ -1,0 +1,612 @@
+[
+  {
+    "name": "bridge_call",
+    "category": "write",
+    "current_transport": "WS",
+    "ws_command": "call",
+    "status": "migrated",
+    "suggested_domain": "revit",
+    "suggested_command": "revit.call",
+    "notes": "Уже WebSocket: protocol v1 `call` — универсальная обёртка для любой команды, включая write."
+  },
+  {
+    "name": "bridge_commands",
+    "category": "read",
+    "current_transport": "WS",
+    "ws_command": "commands.list",
+    "status": "migrated",
+    "suggested_domain": "revit",
+    "suggested_command": "revit.list_commands",
+    "notes": "Уже WebSocket: protocol v1 `commands.list`; кэш 10 с."
+  },
+  {
+    "name": "bridge_ping",
+    "category": "read",
+    "current_transport": "WS",
+    "ws_command": "ping",
+    "status": "migrated",
+    "suggested_domain": "revit",
+    "suggested_command": "revit.ping",
+    "notes": "Уже WebSocket: protocol v1 `ping` (не зарегистрированная команда); HTTP не используется."
+  },
+  {
+    "name": "bridge_status",
+    "category": "read",
+    "current_transport": "WS+GET",
+    "ws_command": "revit.doc_info",
+    "status": "migrated",
+    "suggested_domain": "revit",
+    "suggested_command": "revit.status",
+    "notes": "Композит: WS `ping` + HTTP GET /doc; GET-ногу заменить на revit.doc_info."
+  },
+  {
+    "name": "revit_backup_document",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "revit",
+    "suggested_command": "revit.backup_document",
+    "notes": "POST → 403; revit.save_document(path) делает Save As, а не backup-копию."
+  },
+  {
+    "name": "revit_call",
+    "category": "write",
+    "current_transport": "WS",
+    "ws_command": "call",
+    "status": "migrated",
+    "suggested_domain": "revit",
+    "suggested_command": "revit.call",
+    "notes": "Псевдоним bridge_call; тот же WS `call`."
+  },
+  {
+    "name": "revit_close_document",
+    "category": "write",
+    "current_transport": "WS",
+    "ws_command": "revit.close_document",
+    "status": "migrated",
+    "suggested_domain": "revit",
+    "suggested_command": "revit.close_document",
+    "notes": "P1: WS_STATIC_MAP; POST /close в C# теперь 403."
+  },
+  {
+    "name": "revit_commands",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "revit",
+    "suggested_command": "revit.list_plugin_commands",
+    "notes": "Список ключей HeatLoss; WS-дубля нет, read-only HTTP допустим."
+  },
+  {
+    "name": "revit_connect_pipes",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "mep",
+    "suggested_command": "mep.connect_pipes",
+    "notes": "POST → 403; pipeline.connect_terminal_duct — только terminal→duct."
+  },
+  {
+    "name": "revit_copy_element",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.copy_element",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_create_ceiling",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.create_ceiling",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_create_duct",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": "revit.create_line_element",
+    "status": "migrated",
+    "suggested_domain": "mep",
+    "suggested_command": "mep.create_duct",
+    "notes": "WS revit.create_line_element(kind=duct) вызывает ту же реализацию; argsSchema не объявляет systemType/ductType/levelId/widthMm/heightMm."
+  },
+  {
+    "name": "revit_create_floor",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.create_floor",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_create_grid",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.create_grid",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_create_level",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.create_level",
+    "notes": "POST /create_level → 403; WS-команды нет. Приоритет P3/P4."
+  },
+  {
+    "name": "revit_create_pipe",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": "revit.create_line_element",
+    "status": "migrated",
+    "suggested_domain": "mep",
+    "suggested_command": "mep.create_pipe",
+    "notes": "WS revit.create_line_element(kind=pipe) вызывает ту же реализацию; argsSchema не объявляет systemType/pipeType/levelId/diameterMm."
+  },
+  {
+    "name": "revit_create_roof",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.create_roof",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_create_room",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.create_room",
+    "notes": "POST → 403; pipeline.create_spaces создаёт MEP-пространства, не помещения."
+  },
+  {
+    "name": "revit_create_schedule",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "spec",
+    "suggested_command": "spec.create_schedule",
+    "notes": "POST → 403; WS-команды нет (dwg_revit_create_schedule — DwgParser, не этот WS-мост)."
+  },
+  {
+    "name": "revit_create_view_3d",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "view",
+    "suggested_command": "view.create_3d",
+    "notes": "POST → 403; pipeline.create_plan_view — только план этажа; dwg_revit_create_3d_view — другой сервер (DwgParser stdio-прокси)."
+  },
+  {
+    "name": "revit_create_wall",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": "revit.create_line_element",
+    "status": "migrated",
+    "suggested_domain": "model",
+    "suggested_command": "model.create_wall",
+    "notes": "Полный дубль: реализация читает typeId/baseLevel/topLevel/flip (kind=wall), но argsSchema объявляет только kind/startMm/endMm — нужны camelCase-аргументы."
+  },
+  {
+    "name": "revit_create_wall_type",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.create_wall_type",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_cut_opening",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.cut_opening",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_delete_elements",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.delete_elements",
+    "notes": "POST → 403; pipeline.delete_views/delete_spaces — только конкретные типы, не общая очистка."
+  },
+  {
+    "name": "revit_doc_info",
+    "category": "read",
+    "current_transport": "WS",
+    "ws_command": "revit.doc_info",
+    "status": "migrated",
+    "suggested_domain": "revit",
+    "suggested_command": "revit.doc_info",
+    "notes": "P1: WS_STATIC_MAP; дубль cmd_revit_doc_info. GET /doc в C# остался."
+  },
+  {
+    "name": "revit_dry_run",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "audit",
+    "suggested_command": "audit.dry_run",
+    "notes": "POST → 403, хотя операция read-only; нужен WS-дубль."
+  },
+  {
+    "name": "revit_duplicate_schedule",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "spec",
+    "suggested_command": "spec.duplicate_schedule",
+    "notes": "POST → 403; WS-команды нет (pipeline.create_level_explication дублирует только экпликацию)."
+  },
+  {
+    "name": "revit_export_schedule",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "spec",
+    "suggested_command": "spec.export_schedule",
+    "notes": "POST → 403; pipeline.export_sheet_pdf — только листы."
+  },
+  {
+    "name": "revit_get_bounding_box",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "model",
+    "suggested_command": "model.get_bounding_box",
+    "notes": "Read-only; WS-дубля нет."
+  },
+  {
+    "name": "revit_get_element",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "model",
+    "suggested_command": "model.get_element",
+    "notes": "Read-only; точного WS-дубля нет (revit.element_parameters — только параметры)."
+  },
+  {
+    "name": "revit_get_instance_params",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": "revit.element_parameters",
+    "status": "migrated",
+    "suggested_domain": "model",
+    "suggested_command": "model.get_instance_params",
+    "notes": "WS revit.element_parameters читает instance+type параметры; аргумент elementId вместо id."
+  },
+  {
+    "name": "revit_get_schedule",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": "pipeline.get_schedule",
+    "status": "migrated",
+    "suggested_domain": "spec",
+    "suggested_command": "spec.get_schedule",
+    "notes": "WS pipeline.get_schedule читает header+rows; аргумент scheduleId вместо id."
+  },
+  {
+    "name": "revit_list_categories",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "model",
+    "suggested_command": "model.list_categories",
+    "notes": "Read-only; WS-дубля нет."
+  },
+  {
+    "name": "revit_list_ceilings",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "model",
+    "suggested_command": "model.list_ceilings",
+    "notes": "Read-only; WS-дубля нет."
+  },
+  {
+    "name": "revit_list_duct_types",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "mep",
+    "suggested_command": "mep.list_duct_types",
+    "notes": "Read-only; WS-дубля нет."
+  },
+  {
+    "name": "revit_list_families",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "model",
+    "suggested_command": "model.list_families",
+    "notes": "Read-only; WS-дубля нет."
+  },
+  {
+    "name": "revit_list_floors",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "model",
+    "suggested_command": "model.list_floors",
+    "notes": "Read-only; WS-дубля нет."
+  },
+  {
+    "name": "revit_list_grids",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "model",
+    "suggested_command": "model.list_grids",
+    "notes": "Read-only; WS-дубля нет."
+  },
+  {
+    "name": "revit_list_levels",
+    "category": "read",
+    "current_transport": "WS",
+    "ws_command": "revit.list_levels",
+    "status": "migrated",
+    "suggested_domain": "model",
+    "suggested_command": "model.list_levels",
+    "notes": "P1: WS_STATIC_MAP; дубль cmd_revit_list_levels."
+  },
+  {
+    "name": "revit_list_mechanical_systems",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": "pipeline.list_systems",
+    "status": "migrated",
+    "suggested_domain": "mep",
+    "suggested_command": "mep.list_systems",
+    "notes": "WS pipeline.list_systems возвращает те же системы + число участников."
+  },
+  {
+    "name": "revit_list_pipe_types",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "mep",
+    "suggested_command": "mep.list_pipe_types",
+    "notes": "Read-only; WS-дубля нет."
+  },
+  {
+    "name": "revit_list_piping_systems",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "mep",
+    "suggested_command": "mep.list_piping_systems",
+    "notes": "Read-only; pipeline.list_systems — только mechanical systems."
+  },
+  {
+    "name": "revit_list_roofs",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "model",
+    "suggested_command": "model.list_roofs",
+    "notes": "Read-only; WS-дубля нет."
+  },
+  {
+    "name": "revit_list_rooms",
+    "category": "read",
+    "current_transport": "WS",
+    "ws_command": "revit.list_rooms",
+    "status": "migrated",
+    "suggested_domain": "model",
+    "suggested_command": "model.list_rooms",
+    "notes": "P1: WS_STATIC_MAP, limit/offset мапятся напрямую; дубль cmd_revit_list_rooms."
+  },
+  {
+    "name": "revit_list_schedules",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "spec",
+    "suggested_command": "spec.list_schedules",
+    "notes": "Read-only; WS-дубля нет (pipeline.get_schedule читает одну спецификацию)."
+  },
+  {
+    "name": "revit_list_wall_types",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "model",
+    "suggested_command": "model.list_wall_types",
+    "notes": "Read-only, WS-дубля нет; оставить HTTP."
+  },
+  {
+    "name": "revit_load_family",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.load_family",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_measure_distance",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "model",
+    "suggested_command": "model.measure_distance",
+    "notes": "Read-only; WS-дубля нет."
+  },
+  {
+    "name": "revit_mirror_element",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.mirror_element",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_modify_schedule",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "spec",
+    "suggested_command": "spec.modify_schedule",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_move_element",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.move_element",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_open_document",
+    "category": "write",
+    "current_transport": "WS",
+    "ws_command": "revit.open_document",
+    "status": "migrated",
+    "suggested_domain": "revit",
+    "suggested_command": "revit.open_document",
+    "notes": "P1: WS_STATIC_MAP, detach_from_central → detach; POST /open в C# теперь 403 (LegacyHttpPolicy)."
+  },
+  {
+    "name": "revit_ping",
+    "category": "read",
+    "current_transport": "WS",
+    "ws_command": "revit.ping",
+    "status": "migrated",
+    "suggested_domain": "revit",
+    "suggested_command": "revit.ping",
+    "notes": "P1: переведён на WS через WS_STATIC_MAP; дубль динамического cmd_revit_ping. HTTP GET /ping остался в C#."
+  },
+  {
+    "name": "revit_place_family",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.place_family",
+    "notes": "POST → 403; pipeline.place_air_terminal — только воздухоприёмники, не универсальная вставка семейства."
+  },
+  {
+    "name": "revit_query_elements",
+    "category": "read",
+    "current_transport": "GET",
+    "ws_command": null,
+    "status": "read_only_http",
+    "suggested_domain": "model",
+    "suggested_command": "model.query_elements",
+    "notes": "Read-only; частично покрывается revit.ai_element_filter (больше фильтров, другой формат вывода)."
+  },
+  {
+    "name": "revit_refresh_schedule",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "spec",
+    "suggested_command": "spec.refresh_schedule",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_rotate_element",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "model",
+    "suggested_command": "model.rotate_element",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_run_heatloss",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": "heatloss.calculations",
+    "status": "migrated",
+    "suggested_domain": "revit",
+    "suggested_command": "revit.run_heatloss",
+    "notes": "WS-семейство heatloss.* из manifests/heatloss.bridge.manifest.json (8 ключей, загружается условно); ключ аргумента ↔ команда 1:1, по умолчанию calculations."
+  },
+  {
+    "name": "revit_set_active_view",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "view",
+    "suggested_command": "view.set_active",
+    "notes": "POST → 403; WS-команды нет."
+  },
+  {
+    "name": "revit_set_instance_param",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": "pipeline.set_parameter",
+    "status": "migrated",
+    "suggested_domain": "model",
+    "suggested_command": "model.set_instance_param",
+    "notes": "WS pipeline.set_parameter устанавливает element/type-параметр; аргументы elementId/name/value — переименование полей."
+  },
+  {
+    "name": "revit_undo_last",
+    "category": "write",
+    "current_transport": "POST",
+    "ws_command": null,
+    "status": "needs_ws_command",
+    "suggested_domain": "revit",
+    "suggested_command": "revit.undo_last",
+    "notes": "POST → 403; WS-команды нет; в реализации best-effort."
+  }
+]
