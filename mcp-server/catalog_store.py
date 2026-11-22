@@ -6,6 +6,7 @@ manually edited source of truth.
 """
 import json
 import os
+import re
 import sqlite3
 from datetime import datetime, timezone
 
@@ -22,6 +23,14 @@ def _value(spec, key, default=None):
     if isinstance(spec, dict):
         return spec.get(key, default)
     return getattr(spec, key, default)
+
+
+def _fts_expression(text):
+    """Turn free text into a safe FTS5 prefix query ("foo*" AND "bar*")."""
+    tokens = [token for token in re.split(r"\W+", text, flags=re.UNICODE) if token]
+    if not tokens:
+        return ""
+    return " AND ".join('"%s"*' % token.replace('"', '""') for token in tokens)
 
 
 class CatalogStore:
@@ -104,24 +113,38 @@ class CatalogStore:
         return rows
 
     def search(self, query="", domain="", read_only=None, limit=50):
-        clauses = ["enabled=1"]
+        filters = ["t.enabled=1"]
         params = []
         if domain:
-            clauses.append("domain = ?")
+            filters.append("t.domain = ?")
             params.append(domain)
         if read_only is not None:
-            clauses.append("read_only = ?")
+            filters.append("t.read_only = ?")
             params.append(1 if read_only else 0)
+        limit = max(0, int(limit))
+
         if query:
-            clauses.append(
-                "(name like ? or canonical like ? or description like ? or domain like ?)"
-            )
+            expression = _fts_expression(query)
+            if expression:
+                try:
+                    sql = ("select t.* from tools t "
+                           "join tools_fts f on f.rowid = t.id "
+                           "where tools_fts match ? and " + " and ".join(filters) +
+                           " order by t.canonical limit ?")
+                    rows = [dict(row) for row in self.db.execute(
+                        sql, [expression] + params + [limit])]
+                    if rows:
+                        return self._attach_aliases(rows)
+                except sqlite3.OperationalError:
+                    pass  # fall back to LIKE on FTS syntax/tokenizer issues
+            filters.append(
+                "(t.name like ? or t.canonical like ? or t.description like ? or t.domain like ?)")
             needle = "%" + query + "%"
             params.extend([needle, needle, needle, needle])
-        params.append(max(0, int(limit)))
-        sql = ("select * from tools where " + " and ".join(clauses) +
-               " order by canonical limit ?")
-        rows = [dict(row) for row in self.db.execute(sql, params)]
+
+        sql = ("select t.* from tools t where " + " and ".join(filters) +
+               " order by t.canonical limit ?")
+        rows = [dict(row) for row in self.db.execute(sql, params + [limit])]
         return self._attach_aliases(rows)
 
     def describe(self, name):

@@ -51,6 +51,8 @@ class CatalogStoreTests(unittest.TestCase):
         found = {row["canonical"]: row
                  for row in self.store.search("sheet", limit=10)}
         self.assertEqual(["pipeline.list_sheets"], found["sheet.list"]["aliases"])
+        self.assertEqual(1, len(self.store.search("sheet.list", limit=10)))
+        self.assertEqual(0, len(self.store.search("!!!", limit=10)))
         self.assertIsNone(self.store.describe("nope"))
 
     def test_audit_row(self):
