@@ -133,8 +133,8 @@ namespace RevitBridge
                     "Форма 6 is a specification form and must not be used for drawing sheets.");
             }
 
-            var margin = args.Value<double?>("marginMm") ?? 5;
-            var gap = args.Value<double?>("gapMm") ?? 10;
+            var margin = args.Value<double?>("marginMm") ?? 10;
+            var gap = args.Value<double?>("gapMm") ?? 12;
             var stampReserve = args.Value<double?>("stampReserveMm") ?? 0;
             var cropMargin = args.Value<double?>("cropMarginMm") ?? 1000;
             var includeLinked = args.Value<bool?>("cropIncludeLinked") ?? false;
@@ -155,7 +155,8 @@ namespace RevitBridge
                 var symbol = new FilteredElementCollector(doc)
                     .OfClass(typeof(FamilySymbol)).OfCategory(BuiltInCategory.OST_TitleBlocks)
                     .Cast<FamilySymbol>()
-                    .FirstOrDefault(s => string.Equals(s.Name, titleBlockName, StringComparison.OrdinalIgnoreCase))
+                    .FirstOrDefault(s => string.Equals(s.Name, titleBlockName, StringComparison.OrdinalIgnoreCase) ||
+                                         string.Equals(s.Family.Name, titleBlockName, StringComparison.OrdinalIgnoreCase))
                     ?? throw new InvalidOperationException("Title block not found: " + titleBlockName);
 
                 using (var tx = new Transaction(doc, "Bridge Compose Sheet: create"))
@@ -179,11 +180,16 @@ namespace RevitBridge
             var sheetW = Mm(tbBox.Max.X - tbBox.Min.X);
             var sheetH = Mm(tbBox.Max.Y - tbBox.Min.Y);
             var format = SheetLayoutFormat(sheetW, sheetH, titleBlock.Name);
+            var tbType = doc.GetElement(titleBlock.GetTypeId()) as ElementType;
+            var tbFamily = tbType?.FamilyName ?? "";
+            var generated = titleBlock.Name.StartsWith("NB_", StringComparison.OrdinalIgnoreCase) ||
+                            tbFamily.StartsWith("NB_", StringComparison.OrdinalIgnoreCase);
 
             // Safe box is relative to the title block lower-left corner.
             // For A3 (Форма 3 / А3А): left grif x=5..15 mm, stamp y=0..60 mm,
             // frame x=20..415 mm. A conservative x=20..410, y=60..287 is clean.
-            var safe = ParseRect4(args["safeBoxMm"]) ?? DefaultSafeBox(format, titleBlock.Name);
+            var safe = ParseRect4(args["safeBoxMm"]) ??
+                       DefaultSafeBox(format, generated ? tbFamily : titleBlock.Name);
             var usable = new Rect
             {
                 Name = "usable",
@@ -195,9 +201,16 @@ namespace RevitBridge
             if (usable.W < 60 || usable.H < 60)
                 throw new InvalidOperationException("Safe box is too small for margins: " +
                                                     $"{usable.W:F1}x{usable.H:F1} mm.");
+            if (labelViews)
+            {
+                // Reserve a strip above the first row for view titles placed on top.
+                usable.Y1 -= 8;
+                gap = Math.Max(gap, 14);
+            }
 
-            if (drawFrame) DrawFrame(doc, sheet, originX, originY, sheetW, sheetH);
             if (clearSheet) ClearSheet(doc, sheet);
+            if (drawFrame && !generated) DrawFrame(doc, sheet, originX, originY, sheetW, sheetH);
+            if (generated) DrawStampText(doc, sheet, originX, originY, sheetW, sheetH, args);
 
             var items = new List<Item>();
             var sourceBaseline = new Dictionary<long, Dictionary<string, object>>();
@@ -662,6 +675,50 @@ namespace RevitBridge
             catch (Exception) { return null; }
         }
 
+        private static void DrawStampText(Document doc, ViewSheet sheet, double originX,
+            double originY, double width, double height, JObject args)
+        {
+            var type = FindTextType(doc);
+            if (type == null) return;
+            var sx = Math.Max(5, width - 190);
+            var sy = 5.0;
+            var number = sheet.SheetNumber ?? "";
+            var name = sheet.Name ?? "";
+            if (name.Length > 46) name = name.Substring(0, 46);
+            var project = args?.Value<string>("project") ?? "Тестовый проект";
+            var objectName = args?.Value<string>("object") ?? "Коридор, уровень 2";
+            var stage = args?.Value<string>("stage") ?? "Р";
+            var total = 0;
+            try
+            {
+                total = new FilteredElementCollector(doc).OfClass(typeof(ViewSheet)).GetElementCount();
+            }
+            catch (Exception) { }
+
+            void Text(double x, double y, string value)
+            {
+                try
+                {
+                    TextNote.Create(doc, sheet.Id,
+                        new XYZ(Ft(originX + x), Ft(originY + y), 0), value, type.Id);
+                }
+                catch (Exception) { }
+            }
+
+            using (var tx = new Transaction(doc, "Bridge Compose Sheet: stamp text"))
+            {
+                tx.Start();
+                Text(sx + 4, sy + 42, "Проект: " + project);
+                Text(sx + 4, sy + 26, "Объект: " + objectName);
+                Text(sx + 4, sy + 9, "Стадия: " + stage);
+                // Long sheet name goes above the stamp; the stamp cells stay legible.
+                Text(sx + 4, sy + 62, "Наименование: " + name);
+                Text(sx + 42, sy + 9, "Лист " + number);
+                Text(sx + 97, sy + 9, "Листов " + Math.Max(total, 1));
+                tx.Commit();
+            }
+        }
+
         private static void AddViewLabels(Document doc, ViewSheet sheet, List<Item> items,
             double originX, double originY, Rect usable)
         {
@@ -673,8 +730,10 @@ namespace RevitBridge
                 foreach (var item in items.Where(i => i.Kind == "view" && i.InstanceId != null))
                 {
                     var text = item.Name + "  1:" + item.Scale;
-                    var y = item.Y - item.H - 5;
-                    if (y < usable.Y0 + 2) y = item.Y - item.H + 4;
+                    var y = item.Y + 3;
+                    // The label sits in the margin above the viewport; allow the
+                    // 8 mm label strip that was reserved before packing.
+                    if (y + 4 > usable.Y1 + 8) y = item.Y - item.H + 4;
                     try
                     {
                         TextNote.Create(doc, sheet.Id,
@@ -780,6 +839,16 @@ namespace RevitBridge
 
         private static Rect DefaultSafeBox(string format, string titleBlockName)
         {
+            if (string.Equals(titleBlockName, "NB_A4", StringComparison.OrdinalIgnoreCase) ||
+                (format == "A4" && titleBlockName.StartsWith("NB_", StringComparison.OrdinalIgnoreCase)))
+                return new Rect { Name = "safe", X0 = 20, Y0 = 65, X1 = 287, Y1 = 200 };
+            if (titleBlockName.StartsWith("NB_", StringComparison.OrdinalIgnoreCase))
+            {
+                if (format == "A3") return new Rect { X0 = 20, Y0 = 65, X1 = 410, Y1 = 287 };
+                if (format == "A2") return new Rect { X0 = 20, Y0 = 65, X1 = 584, Y1 = 410 };
+                if (format == "A1") return new Rect { X0 = 20, Y0 = 65, X1 = 831, Y1 = 584 };
+                if (format == "A0") return new Rect { X0 = 20, Y0 = 65, X1 = 1179, Y1 = 831 };
+            }
             if (format == "A3")
                 return new Rect { Name = "safe", X0 = 20, Y0 = 60, X1 = 410, Y1 = 287 };
             if (format == "A4")
@@ -798,11 +867,13 @@ namespace RevitBridge
                 .OfClass(typeof(Viewport)).ToElementIds().ToList();
             var scheduleIds = new FilteredElementCollector(doc, sheet.Id)
                 .OfClass(typeof(ScheduleSheetInstance)).ToElementIds().ToList();
-            if (viewportIds.Count == 0 && scheduleIds.Count == 0) return;
+            var textIds = new FilteredElementCollector(doc, sheet.Id)
+                .OfClass(typeof(TextNote)).ToElementIds().ToList();
+            if (viewportIds.Count == 0 && scheduleIds.Count == 0 && textIds.Count == 0) return;
             using (var tx = new Transaction(doc, "Bridge Compose Sheet: clear"))
             {
                 tx.Start();
-                foreach (var id in viewportIds.Concat(scheduleIds))
+                foreach (var id in viewportIds.Concat(scheduleIds).Concat(textIds))
                 {
                     try { doc.Delete(id); } catch (Exception) { }
                 }

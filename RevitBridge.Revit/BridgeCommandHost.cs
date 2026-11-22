@@ -232,6 +232,9 @@ namespace RevitBridge
             Register("pipeline.load_titleblock", "Create a .rfa from a title-block .rft template and load it", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"templatePath\":{\"type\":\"string\"},\"rfaPath\":{\"type\":\"string\"}},\"required\":[\"templatePath\",\"rfaPath\"]}"),
                 args => _handler.Run(app => SheetComposeOps.LoadTitleBlockTemplate(app, args as JObject ?? new JObject()), 180000));
+            Register("pipeline.create_titleblock_set", "Create/load NB_A4..A0 title blocks with frame and stamp", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"outputDir\":{\"type\":\"string\"},\"templateDir\":{\"type\":\"string\"},\"formats\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}}}"),
+                args => _handler.Run(app => TitleBlockOps.CreateSet(app, args as JObject ?? new JObject()), 300000));
             Register("pipeline.place_view", "Place a view on a sheet", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"viewId\":{\"type\":\"integer\"},\"xMm\":{\"type\":\"number\"},\"yMm\":{\"type\":\"number\"}},\"required\":[\"sheetId\",\"viewId\"]}"),
                 args => _handler.Run(app => PipelineOps.PlaceViewOnSheet(app, args as JObject ?? new JObject()), 120000));
