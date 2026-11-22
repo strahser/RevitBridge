@@ -18,16 +18,16 @@ namespace RevitBridge
     {
         private const double MmPerFt = 304.8;
 
-        private static Document Doc(UIApplication app)
+        internal static Document Doc(UIApplication app)
         {
             return app.ActiveUIDocument?.Document
                 ?? throw new InvalidOperationException("Нет активного документа.");
         }
 
         private static double Ft(double mm) => mm / MmPerFt;
-        private static double Mm(double ft) => ft * MmPerFt;
+        internal static double Mm(double ft) => ft * MmPerFt;
 
-        private sealed class Placement
+        internal sealed class Placement
         {
             public string Kind;
             public ElementId Id;
@@ -41,23 +41,14 @@ namespace RevitBridge
             public ViewSchedule Schedule;
         }
 
-        private sealed class TitleBlockInfo
-        {
-            public ElementId SymbolId;
-            public string FamilyName;
-            public string Name;
-            public double W;
-            public double H;
-        }
-
-        private sealed class ScheduleEstimate
+        internal sealed class ScheduleEstimate
         {
             public ViewSchedule Schedule;
             public double W;
             public double H;
         }
 
-        private sealed class Rect
+        internal sealed class Rect
         {
             public string Name;
             public double X0, Y0, X1, Y1;
@@ -138,7 +129,7 @@ namespace RevitBridge
             else
             {
                 var requestedName = args?.Value<string>("titleBlockName");
-                var formats = MeasureTitleBlocks(doc);
+                var formats = TitleBlockCatalog.MeasureTitleBlocks(doc);
                 if (!string.IsNullOrWhiteSpace(requestedName))
                 {
                     formats = formats
@@ -152,7 +143,7 @@ namespace RevitBridge
                         (string.IsNullOrWhiteSpace(requestedName) ? "." : ": " + requestedName));
                 }
 
-                var chosen = ChooseTitleBlock(formats, crops, estimates,
+                var chosen = TitleBlockCatalog.ChooseTitleBlock(formats, crops, estimates,
                     margin, gap, bottomReserve, requestedScale,
                     !string.IsNullOrWhiteSpace(requestedName), out _);
                 using (var tx = new Transaction(doc, "Bridge Create Layout Sheet"))
@@ -516,123 +507,7 @@ namespace RevitBridge
 
         public static object ListTitleBlocks(UIApplication app, JObject args)
         {
-            var doc = Doc(app);
-            var items = MeasureTitleBlocks(doc)
-                .GroupBy(f => f.FamilyName + "|" + f.Name + "|"
-                              + Math.Round(f.W) + "x" + Math.Round(f.H))
-                .Select(g => g.First())
-                .OrderBy(f => f.W * f.H)
-                .Select(f => new Dictionary<string, object>
-                {
-                    { "id", f.SymbolId.Value },
-                    { "familyName", f.FamilyName },
-                    { "name", f.Name },
-                    { "widthMm", f.W },
-                    { "heightMm", f.H },
-                    { "format", SheetLayoutMath.FormatName(f.W, f.H) },
-                })
-                .ToList();
-            return new Dictionary<string, object> { { "count", items.Count }, { "items", items } };
-        }
-
-        private static List<TitleBlockInfo> MeasureTitleBlocks(Document doc)
-        {
-            var result = new List<TitleBlockInfo>();
-            // Не группируем по s.Name: у разных семейств бывают одноимённые
-            // типы (например, «Форма 3» для A2 и A3). Иначе один из форматов
-            // теряется и compose_sheet не видит A2.
-            var symbols = new FilteredElementCollector(doc).OfClass(typeof(FamilySymbol))
-                .OfCategory(BuiltInCategory.OST_TitleBlocks).Cast<FamilySymbol>()
-                .Where(s => s.Family != null)
-                .ToList();
-
-            using (var tx = new Transaction(doc, "Bridge Measure Title Blocks"))
-            {
-                tx.Start();
-                foreach (var symbol in symbols)
-                {
-                    try
-                    {
-                        var sheet = ViewSheet.Create(doc, symbol.Id);
-                        doc.Regenerate();
-                        var titleBlock = new FilteredElementCollector(doc, sheet.Id)
-                            .OfCategory(BuiltInCategory.OST_TitleBlocks)
-                            .WhereElementIsNotElementType()
-                            .FirstElement();
-                        var box = titleBlock?.get_BoundingBox(sheet);
-                        if (box != null)
-                        {
-                            result.Add(new TitleBlockInfo
-                            {
-                                SymbolId = symbol.Id,
-                                FamilyName = symbol.Family.Name,
-                                Name = string.IsNullOrWhiteSpace(symbol.Name)
-                                    ? symbol.Family.Name
-                                    : symbol.Name,
-                                W = Mm(box.Max.X - box.Min.X),
-                                H = Mm(box.Max.Y - box.Min.Y),
-                            });
-                        }
-                    }
-                    catch (Exception) { }
-                }
-                tx.RollBack();
-            }
-            return result;
-        }
-
-        private static TitleBlockInfo ChooseTitleBlock(
-            List<TitleBlockInfo> formats,
-            Dictionary<long, Rect> crops,
-            List<ScheduleEstimate> estimates,
-            double margin,
-            double gap,
-            double bottomReserve,
-            int requestedScale,
-            bool allowCustom,
-            out bool fits)
-        {
-            var unique = formats
-                .Where(f => allowCustom || SheetLayoutMath.FormatName(f.W, f.H) != "custom")
-                .GroupBy(f => f.FamilyName + "|" + f.Name + "|"
-                              + Math.Round(f.W) + "x" + Math.Round(f.H))
-                .Select(g => g.First())
-                .OrderBy(f => f.W * f.H)
-                .ToList();
-            if (unique.Count == 0) throw new InvalidOperationException("No title block formats measured.");
-            fits = false;
-
-            foreach (var format in unique)
-            {
-                var usableW = format.W - 2 * margin;
-                var usableH = format.H - 2 * margin - bottomReserve;
-                if (usableW < 80 || usableH < 80) continue;
-
-                var scheduleW = estimates.Count > 0 ? estimates.Max(e => e.W) : 0;
-                if (scheduleW > usableW * 0.65) continue;
-                var planW = usableW - (scheduleW > 0 ? scheduleW + gap : 0);
-                if (planW < 100) continue;
-
-                var scale = requestedScale > 0
-                    ? requestedScale
-                    : SheetLayoutMath.RequiredScale(
-                        crops.Values.Select(r => new SheetLayoutMath.Box(r.W, r.H)),
-                        planW, usableH);
-                var viewItems = crops.Values
-                    .Select(r => new Placement { W = r.W / scale + 8, H = r.H / scale + 8 })
-                    .OrderByDescending(i => i.H).ToList();
-                if (!SheetLayoutMath.ShelfFits(
-                        viewItems.Select(i => new SheetLayoutMath.Box(i.W, i.H)).ToList(),
-                        planW, usableH, gap)) continue;
-
-                var scheduleHeight = estimates.Sum(e => e.H + gap);
-                if (scheduleHeight > usableH + gap) continue;
-
-                fits = true;
-                return format;
-            }
-
-            return unique.Last();
+            return TitleBlockCatalog.List(app, args);
         }
 
         public static object DebugSpaces(UIApplication app, JObject args)
