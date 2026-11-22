@@ -1,24 +1,20 @@
 # RevitBridge — мост OpenCode ↔ Revit 2024
 
-Позволяет агенту (OpenCode) самостоятельно: открыть `.rvt` файл, прочитать
-информацию о документе/помещениях/уровнях и запустить окна плагина
-`HeatLossRevit4` — без ручных кликов в Revit.
+Позволяет агенту (OpenCode) самостоятельно открыть `.rvt`, прочитать документ/помещения/уровни,
+выполнить команды плагинов и собрать лист — без ручных кликов в Revit.
 
 ## Архитектура
 
 ```
-OpenCode --stdio--> mcp-server/server.py --WebSocket ws://127.0.0.1:17871/bridge--> RevitBridge.Revit (внутри Revit) --> Revit API
+OpenCode --stdio--> mcp-server/server.py --WebSocket ws://127.0.0.1:17871/bridge--> RevitBridge.Revit --> Revit API
 ```
 
-* **RevitBridge.Revit** (C#, net48, Revit 2024) — `IExternalApplication`, держит
-  `HttpListener` на `127.0.0.1:17871` (порт — `REVIT_BRIDGE_PORT`, fallback `REVIT_MCP_PORT`);
-  HTTP `GET /health` + WebSocket `/bridge` (protocol v1, команды `bridge_ping/commands/call`), все вызовы
-  Revit API выполняет на главном потоке через `ExternalEvent`.
-* **mcp-server/server.py** (Python, stdlib; дочернему DwgParser нужен `mcp>=2.0`) —
-  stdio MCP-фасад. В текущем состоянии: 61 static tool, до 126 dynamic WS-команд
-  (55 built-in + 71 из манифестов) и 106 `dwg_*` из дочернего DwgParser.
-  Read-only по умолчанию; `REVIT_BRIDGE_ALLOW_WRITES=1` включает запись в Revit.
-  Легаси HTTP принимает только `GET`; все `POST` → `403 legacy_write_disabled`.
+* **RevitBridge.Revit** (C#, net48, Revit 2024) — `IExternalApplication`, `HttpListener` на
+  `127.0.0.1:17871` (порт — `REVIT_BRIDGE_PORT`, fallback `REVIT_MCP_PORT`). HTTP `GET /health` +
+  WebSocket `/bridge` (protocol v1); все вызовы Revit API идут на главном потоке через `ExternalEvent`.
+* **mcp-server/server.py** (Python, stdlib; дочернему DwgParser нужен `mcp>=2.0`) — stdio MCP-фасад:
+  61 static tool, до 126 dynamic WS-команд (55 built-in + 71 из манифестов) и 106 `dwg_*` из DwgParser.
+  Read-only по умолчанию. Легаси HTTP принимает только `GET`; все `POST` → `403 legacy_write_disabled`.
 
 ## Установка (один раз)
 
@@ -26,34 +22,35 @@ OpenCode --stdio--> mcp-server/server.py --WebSocket ws://127.0.0.1:17871/bridge
    `"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" RevitBridge.Revit\RevitBridge.Revit.csproj /t:Restore,Build /p:Configuration=Release.R24 /p:Platform="Any CPU"`
 2. Разложить в Revit:
    `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install_addin.ps1`
-3. Python-зависимость: `pip install -r mcp-server\requirements.txt` (уже стоит `mcp 2.0.0`)
+3. Python-зависимости: `pip install -r mcp-server\requirements.txt` (нужен `websocket-client`).
 4. Подключить к OpenCode — добавить в `opencode.json` (пример в `opencode.json.example`):
    ```json
    "mcp": {
-     "revit-mcp": {
+     "revit-bridge": {
        "type": "local",
-       "command": ["python", "-X", "utf8", "E:\\ПлагиныРевит\\\\_bim\\RevitBridge\\mcp-server\\server.py"],
+       "command": ["python", "-X", "utf8", "D:\\Projects\\01-bim\\RevitBridge\\mcp-server\\server.py"],
        "enabled": true
      }
    }
    ```
-5. Перезапустить Revit 2024 (подхватит `RevitBridge.addin`), затем:
-   `revit_open_document` с путём `D:\Projects\_testdata\ТестыОВ\newBuilding\HvackFinal.rvt`.
+5. Перезапустить Revit 2024 (подхватит `RevitBridge.addin`), затем открыть модель через
+   `revit_open_document`.
 
 ## Инструменты
 
-| Инструмент | Транспорт | Назначение |
-|---|---|---|
-| `revit_ping`, `revit_doc_info`, `revit_list_levels`, `revit_list_rooms` | WS | базовое чтение документа |
-| `revit_open_document`, `revit_close_document` | WS | открыть/закрыть активный документ (без HTTP POST) |
-| `bridge_commands`, `bridge_status` | WS/GET | диагностика моста и список команд |
-| `bridge_call`, `revit_call` | WS | generic-вызов команды; write блокируется политикой |
-| `cmd_*` | WS | динамические команды провайдеров (126 live) |
-| `dwg_*` | stdio child | DWG/DXF/PDF/3D из DwgParser |
+По умолчанию `MCP_TOOLS_MODE=compact`: в `tools/list` только 7 прямых инструментов.
 
-`revit_run_heatloss` и остальные legacy static write tools без WS-команды
-сейчас возвращают `legacy_write_disabled`: HTTP POST закрыт, перенос на WS — P3/P4.
-Для записи в Revit нужен `REVIT_BRIDGE_ALLOW_WRITES=1` и write-профиль MCP.
+| Инструмент | Назначение |
+|---|---|
+| `bridge_status` | здоровье моста и активный документ |
+| `revit_doc_info` | заголовок/путь/счётчики документа |
+| `revit_open_document` | открыть `.rvt`/`.rte` (WS) |
+| `tools_search` | поиск по каталогу: query/domain/read_only |
+| `tools_describe` | точная схема и аннотации инструмента |
+| `tools_call` | вызов любого инструмента по имени |
+| `tools_health` | состояние провайдеров (`revit-ws`, `dwgparser`, `static`) |
+
+Полный legacy-список (`MCP_TOOLS_MODE=full`) — **297** имён: 61 static + 4 meta + 126 dynamic + 106 `dwg_*`.
 
 ### Профили и запись
 
@@ -61,51 +58,69 @@ OpenCode --stdio--> mcp-server/server.py --WebSocket ws://127.0.0.1:17871/bridge
 # read-only (по умолчанию)
 $env:MCP_PROFILE = "revit-read"
 
-# write через gateway; C# всё равно требует AllowWrites
+# запись через gateway; C# всё равно требует AllowWrites
 $env:MCP_PROFILE = "revit-write"
 $env:MCP_ALLOW_WRITES = "1"
 $env:REVIT_BRIDGE_ALLOW_WRITES = "1"
 ```
 
-`tools_call` для destructive-команд требует `confirmed=true`; `tools_search`
-фильтрует по `read_only`. MCP-клиент видит эти аннотации в `tools/list`.
+`tools_call` для destructive-команд требует `confirmed=true`. `tools_search` фильтрует по
+`read_only`. MCP-клиент видит аннотации в `tools/list`.
 
-По умолчанию `MCP_TOOLS_MODE=compact`: в `tools/list` только 7 прямых
-инструментов + `tools_search`/`tools_describe`/`tools_call`/`tools_health`.
-Полный legacy-список (296 имён) включается `MCP_TOOLS_MODE=full`.
+Запись включается только при **обоих** условиях: write-профиль MCP и `REVIT_BRIDGE_ALLOW_WRITES=1`
+в процессе Revit. Иначе C# вернёт `Write commands are disabled`.
 
-## Единый MCP (P3)
+## Каталог и аудит (P5)
 
-Один сервер `revit-bridge` (stdio) объединяет:
+`tool_catalog.db` — производный кэш/аудит, не источник истины. Источник — live-провайдеры и
+манифесты. База удаляется и пересобирается в любой момент:
 
-- статические `bridge_*` / `revit_*` инструменты (61);
-- динамические `cmd_<provider>_<command>` — все команды из live `commands.list`
-  (126 = 55 built-in + 57 DwgParser + 8 HeatLoss + 6 NetworkBuilder);
-- `dwg_*` — прокси DwgParser MCP (DWG/DXF/PDF/3D), дочерний процесс
-  `DwgParser/mcp_server.py` (override: `DWGPARSER_MCP_SERVER`), 106 инструментов;
-- `revit_call` — generic-вызов любой bridge-команды.
+```powershell
+python mcp-server\catalog_build.py --db D:\temp\tool_catalog.db --verify
+```
 
-Итого до ~293 имён в одном MCP (с дублями legacy/WS). P2-gateway (`tools_search`,
-`tools_describe`, `tools_call`) сокращает прямой список до 8–10 инструментов.
+`--verify` — consistency gate: DB == gateway, duplicate canonical = 0, FTS = tools.
+Если задан `MCP_CATALOG_DB`, `tools_search`/`tools_describe` читают кэш, а `tools_call` пишет
+строку в `tool_calls` (`ok` / `policy_error` / `unknown_tool` / `provider_error`).
+Без переменной всё работает из памяти, аудит отключён.
 
-## Live / background / test (P6)
+## Классификация DwgParser (P1.6)
 
-- **Live:** пользователь открыл Revit; `revit-bridge` подключается к add-in, `bridge_status`
-  показывает `bridge` + активный документ.
-- **Background:** запусти Revit с нужной моделью заранее; после P1 static
-  `revit_open_document` идёт в WS и требует уже работающий Revit.
-  `revit_close_document(save=false)` завершает сценарий.
-  Revit остаётся GUI-процессом; это автоматизация без ручных кликов, не headless.
-- **Test:** `RevitHeadless`/`Nice3point.TUnit.Revit` — отдельный контур, мост не участвует.
-- **Безопасность:** `REVIT_BRIDGE_TOKEN` (hello-token), `REVIT_BRIDGE_ALLOW_WRITES=0` —
-  read-only, `send_code_to_revit` запрещён политикой.
-- **Подпись:** unsigned add-in показывает диалог Revit «Загрузить» (нажать один раз) или
-  подписать сертификатом, доверенным в `TrustedPublisher`/`Root`.
+Дочерний DwgParser помечает почти все инструменты `readOnlyHint=false` (дефолт MCP), поэтому
+источник истины — `mcp-server/manifests/dwg_policy.json`:
+
+* 51 read-only (чтение модели и файловые экспорты DXF/PDF/DOCX);
+* 55 writers (создание/изменение/удаление в Revit, произвольные команды);
+* 5 destructive (delete/close/send_command/execute_revit_calls/run_heatloss) — нужен `confirmed=true`.
+
+Инструмент, которого нет в манифесте, считается writer (fail closed). Проверка соответствия
+живому списку:
+
+```powershell
+python tools\dwg_policy_audit.py
+```
+
+## Live / background / test
+
+* **Live:** пользователь открыл Revit; `revit-bridge` подключается к add-in, `bridge_status`
+  показывает мост и активный документ.
+* **Background:** запусти Revit заранее; `revit_open_document` идёт в WS и требует работающий Revit.
+  `revit_close_document(save=false)` завершает сценарий. Revit остаётся GUI-процессом: это
+  автоматизация без ручных кликов, не headless.
+* **Test:** `RevitHeadless`/`Nice3point.TUnit.Revit` — отдельный контур, мост не участвует.
+* **Безопасность:** `REVIT_BRIDGE_TOKEN` (hello-token), `REVIT_BRIDGE_ALLOW_WRITES=0` — read-only,
+  `send_code_to_revit` запрещён политикой.
+* **Подпись:** unsigned add-in показывает диалог Revit «Загрузить» (нажать один раз) или подписать
+  сертификатом, доверенным в `TrustedPublisher`/`Root`.
+
+Проверено 2026-11-22: read-only — 143 вида, 17 листов, PDF-экспорт; write-профиль — compose A3 на
+копии `K1_HVAC_demo.rvt` → `valid=true`, PDF 68 234 B, исходный проект не изменён. Виды в `.rte`
+пустые: `Viewport.Create` для них падает, для compose-тестов нужен проект с непустыми видами.
 
 ## Подпись add-in (доверенный сертификат)
 
-Revit проверяет Authenticode-подпись DLL. Без доверенного сертификата он показывает
-диалог «Безопасность: недопустимая подпись»; подписанный доверенный add-in грузится без вопроса.
+Revit проверяет Authenticode-подпись DLL. Без доверенного сертификата он показывает диалог
+«Безопасность: недопустимая подпись»; подписанный доверенный add-in грузится без вопроса.
 
 **Локальная разработка (самоподписанный сертификат):**
 
@@ -136,29 +151,64 @@ Get-AuthenticodeSignature .\RevitBridge.Revit\bin\Debug.R24\RevitBridge.Revit.dl
 # Status = Valid
 ```
 
-**Продакшн:** используйте сертификат код-подписи от CA (не самоподписанный), PFX храните
-в секрете, подписывайте с timestamp (`-TimestampUrl http://timestamp.digicert.com`), а корень
-доверяйте в `LocalMachine` через групповую политику/установщик. Самоподписанный сертификат
-годится только для локальной машины разработчика.
+**Продакшн:** используйте сертификат код-подписи от CA (не самоподписанный), PFX храните в секрете,
+подписывайте с timestamp (`-TimestampUrl http://timestamp.digicert.com`), корень доверяйте в
+`LocalMachine` через групповую политику/установщик. Самоподписанный сертификат годится только для
+локальной машины разработчика.
 
-## Манифесты команд (P2)
+## Манифесты команд
 
-- `manifests/heatloss.bridge.manifest.json` — команды HeatLossRevit4.
-- `DwgParser` и `NetworkBuilder` кладут `bridge.manifest.json` рядом со своим плагином.
-- Add-in читает `*.manifest.json` из `D:\Projects\01-bim`, `04-network`, `03-heating`
+* `manifests/heatloss.bridge.manifest.json` — команды HeatLossRevit4.
+* `DwgParser` и `NetworkBuilder` кладут `bridge.manifest.json` рядом со своим плагином.
+* Add-in читает `*.manifest.json` из `D:\Projects\01-bim`, `04-network`, `03-heating`
   (override: `REVIT_BRIDGE_MANIFESTS=A;B`).
-- Инструменты MCP: `bridge_ping`, `bridge_commands`, `bridge_call {command,args}`.
-- При вызове команд через мост выставляется `REVIT_BRIDGE_SUPPRESS_UI=1`; UI-команды
-  должны возвращать отчёт через `IExternalCommand.message`, а не открывать `TaskDialog`.
+* При вызове команд через мост выставляется `REVIT_BRIDGE_SUPPRESS_UI=1`; UI-команды должны
+  возвращать отчёт через `IExternalCommand.message`, а не открывать `TaskDialog`.
+
+## Переменные окружения
+
+| Переменная | Сторона | По умолчанию | Назначение |
+|---|---|---|---|
+| `REVIT_MCP_URL` | MCP | `http://127.0.0.1:17871` | HTTP health/legacy GET |
+| `REVIT_BRIDGE_URL` | MCP | `ws://127.0.0.1:17871/bridge` | WebSocket моста |
+| `REVIT_BRIDGE_TOKEN` | обе | пусто | hello-token; пусто = локальный dev |
+| `REVIT_BRIDGE_ALLOW_WRITES` | Revit | `0` | разрешить write-команды C# |
+| `REVIT_BRIDGE_PORT` | Revit | `17871` | порт HTTP/WS |
+| `REVIT_BRIDGE_MANIFESTS` | Revit | `D:\Projects\01-bim;04-network;03-heating` | корни манифестов |
+| `MCP_PROFILE` | MCP | `revit-read` | профиль политики |
+| `MCP_ALLOW_WRITES` | MCP | `0` | write в gateway |
+| `MCP_TOOLS_MODE` | MCP | `compact` | `compact` (7) / `full` (297) |
+| `MCP_CATALOG_DB` | MCP | пусто | SQLite-кэш и аудит |
+| `DWG_POLICY` | MCP | `mcp-server/manifests/dwg_policy.json` | классификация DwgParser |
+| `DWGPARSER_MCP_SERVER` | MCP | `DwgParser/mcp_server.py` | дочерний MCP |
+| `REVIT_EXE` | MCP | авто | путь к `Revit.exe` |
+| `REVIT_DEFAULT_MODEL` | MCP | авто | модель по умолчанию |
+
+## Тесты
+
+```powershell
+# C# (Core, без Revit)
+dotnet run --project tests\RevitBridge.Core.Tests\RevitBridge.Core.Tests.csproj -c Debug --no-restore
+
+# Python
+python -X utf8 -m unittest discover -s mcp-server/tests -p "test_*.py"
+
+# Инвентаризация и гейты
+python tools\tool_surface_audit.py
+python tools\dwg_policy_audit.py
+python mcp-server\catalog_build.py --db D:\temp\tool_catalog.db --verify
+```
+
+`dotnet test` в .NET 10 SDK не подходит для TUnit (`VSTest target is no longer supported`);
+используйте `dotnet run` выше.
 
 ## Диагностика
 
-* Лог аддина: `%TEMP%\<guid>\RevitBridge.log` (временная папка процесса Revit)
+* Лог аддина: `%TEMP%\<guid>\RevitBridge.log` (временная папка процесса Revit).
 * `revit_ping` падает с `RevitDown` — Revit не запущен или аддин не загрузился
   (проверить `%AppData%\Autodesk\Revit\Addins\2024\RevitBridge.addin`).
 * `POST /run` требует загруженный `MainAppHeatLoss.dll` (плагин HeatLoss установлен).
 
 ## GitHub
 
-Репозитория пока нет (локальный проект `D:\Projects\01-bim\RevitBridge\`).
-Если нужен `git init + push` — скажите, создам репозиторий на GitHub.
+<https://github.com/strahser/RevitBridge>

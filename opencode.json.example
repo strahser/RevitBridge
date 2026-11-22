@@ -1,12 +1,12 @@
 {
   "mcp": {
-    "revit-mcp": {
+    "revit-bridge": {
       "type": "local",
       "command": [
         "python",
         "-X",
         "utf8",
-        "E:\\ПлагиныРевит\\RevitBridge\\mcp-server\\server.py"
+        "D:\\Projects\\01-bim\\RevitBridge\\mcp-server\\server.py"
       ],
       "enabled": true
     }

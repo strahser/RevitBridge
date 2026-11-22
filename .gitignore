@@ -10,3 +10,6 @@ __pycache__/
 .venv/
 # Revit deploy copies (local only)
 *.log
+# Generated catalog caches (rebuild with catalog_build.py)
+*.db
+tool_catalog.db*
