@@ -97,37 +97,7 @@ namespace RevitBridge
         {
             new RevitCoreModule().Register(this);
             new PipelineModule().Register(this);
-
-            Register("revit.tag_walls", "Tag walls in the current view", BridgeTransaction.Write,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\"}}}"),
-                args => _handler.Run(app => ExtendedOps.TagWalls(app, args as JObject ?? new JObject()), 120000));
-            Register("revit.tag_rooms", "Tag rooms in the current view", BridgeTransaction.Write,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\"}}}"),
-                args => _handler.Run(app => ExtendedOps.TagRooms(app, args as JObject ?? new JObject()), 120000));
-            Register("revit.model_statistics", "Model statistics by category/type/level", BridgeTransaction.Read, null,
-                args => _handler.Run(app => ExtendedOps.ModelStatistics(app, args as JObject ?? new JObject()), 120000));
-            Register("revit.material_quantities", "Material areas and volumes", BridgeTransaction.Read, null,
-                args => _handler.Run(app => ExtendedOps.MaterialQuantities(app, args as JObject ?? new JObject()), 120000));
-            Register("revit.ai_element_filter", "Filter elements by category/level/type/parameter", BridgeTransaction.Read,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"category\":{\"type\":\"string\"},\"level\":{\"type\":\"string\"},\"typeName\":{\"type\":\"string\"},\"parameterName\":{\"type\":\"string\"},\"parameterValue\":{\"type\":\"string\"},\"limit\":{\"type\":\"integer\"}}}"),
-                args => _handler.Run(app => ExtendedOps.FilterElements(app, args as JObject ?? new JObject()), 60000));
-            Register("revit.operate_element", "Select/color/hide/isolate elements", BridgeTransaction.Write,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\"},\"ids\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}},\"color\":{\"type\":\"string\"}},\"required\":[\"action\",\"ids\"]}"),
-                args => _handler.Run(app => ExtendedOps.OperateElement(app, args as JObject ?? new JObject()), 60000),
-                ViewOnlySafety());
-            Register("revit.color_splash", "Color elements by a parameter value", BridgeTransaction.Write,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"parameterName\":{\"type\":\"string\"}},\"required\":[\"parameterName\"]}"),
-                args => _handler.Run(app => ExtendedOps.ColorSplash(app, args as JObject ?? new JObject()), 120000),
-                ViewOnlySafety());
-            Register("revit.create_dimensions", "Create a linear dimension between two elements", BridgeTransaction.Write,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"elementId1\":{\"type\":\"integer\"},\"elementId2\":{\"type\":\"integer\"},\"offsetMm\":{\"type\":\"number\"}},\"required\":[\"elementId1\",\"elementId2\"]}"),
-                args => _handler.Run(app => ExtendedOps.CreateDimensions(app, args as JObject ?? new JObject()), 60000));
-            Register("revit.create_structural_framing", "Create a structural framing grid", BridgeTransaction.Write,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"levelId\":{\"type\":\"integer\"},\"startMm\":{\"type\":\"array\"},\"endMm\":{\"type\":\"array\"},\"spacingMm\":{\"type\":\"number\"},\"count\":{\"type\":\"integer\"}},\"required\":[\"levelId\",\"startMm\",\"endMm\"]}"),
-                args => _handler.Run(app => ExtendedOps.CreateStructuralFraming(app, args as JObject ?? new JObject()), 120000));
-            Register("revit.create_line_element", "Create a wall/pipe/duct by two points", BridgeTransaction.Write,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"kind\":{\"type\":\"string\"},\"startMm\":{\"type\":\"array\"},\"endMm\":{\"type\":\"array\"}},\"required\":[\"kind\",\"startMm\",\"endMm\"]}"),
-                args => _handler.Run(app => ExtendedOps.CreateLineElement(app, args as JObject ?? new JObject()), 120000));
+            new RevitModelingModule().Register(this);
         }
 
         private void LoadManifests()
@@ -256,39 +226,5 @@ namespace RevitBridge
                 });
         }
 
-        private static CommandSafety ViewOnlySafety()
-        {
-            return new CommandSafety
-            {
-                ReadOnly = false,
-                WritesDocument = false,
-                Destructive = false,
-                RequiresConfirmation = false,
-                BackupRequired = false,
-                Idempotent = false,
-                OpenWorld = false,
-            };
-        }
-
-        private void Register(string name, string description, BridgeTransaction transaction, JToken argsSchema,
-            Func<JToken, object> handler, CommandSafety safety = null)
-        {
-            var transactionName = transaction.ToString().ToLowerInvariant();
-            Registry.Register(
-                new CommandDescriptor
-                {
-                    Name = name,
-                    Description = description,
-                    Provider = "RevitBridge",
-                    Transaction = transactionName,
-                    ArgsSchema = argsSchema,
-                    Safety = safety ?? CommandSafetyDefaults.For(name, transactionName),
-                },
-                args =>
-                {
-                    var result = handler(args);
-                    return result == null ? JValue.CreateNull() : JToken.FromObject(result);
-                });
-        }
     }
 }

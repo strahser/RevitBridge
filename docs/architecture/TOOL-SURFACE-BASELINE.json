@@ -63,16 +63,6 @@
     "revit_create_duct"
   ],
   "bridge": [
-    "revit.tag_walls",
-    "revit.tag_rooms",
-    "revit.model_statistics",
-    "revit.material_quantities",
-    "revit.ai_element_filter",
-    "revit.operate_element",
-    "revit.color_splash",
-    "revit.create_dimensions",
-    "revit.create_structural_framing",
-    "revit.create_line_element",
     "pipeline.list_views",
     "pipeline.list_sheets",
     "pipeline.clear_model",
@@ -117,7 +107,17 @@
     "revit.current_view_info",
     "revit.current_view_elements",
     "revit.selected_elements",
-    "revit.element_parameters"
+    "revit.element_parameters",
+    "revit.tag_walls",
+    "revit.tag_rooms",
+    "revit.model_statistics",
+    "revit.material_quantities",
+    "revit.ai_element_filter",
+    "revit.operate_element",
+    "revit.color_splash",
+    "revit.create_dimensions",
+    "revit.create_structural_framing",
+    "revit.create_line_element"
   ],
   "dwg": [
     "render_2d",
@@ -310,7 +310,8 @@
       "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\BridgeCommandHost.cs",
       "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\Commands\\CommandModule.cs",
       "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\Commands\\PipelineModule.cs",
-      "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\Commands\\RevitCoreModule.cs"
+      "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\Commands\\RevitCoreModule.cs",
+      "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\Commands\\RevitModelingModule.cs"
     ],
     "dwg": "D:\\Projects\\01-bim\\DwgParser\\mcp_server.py",
     "catalog": "D:\\Projects\\01-bim\\DwgParser\\tools\\mcp_gen\\tools_registry.json"
