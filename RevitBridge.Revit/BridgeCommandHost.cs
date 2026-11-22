@@ -27,7 +27,7 @@ namespace RevitBridge
             var policy = new BridgePolicy
             {
                 Token = Environment.GetEnvironmentVariable("REVIT_BRIDGE_TOKEN") ?? "",
-                AllowWrites = ReadBool("REVIT_BRIDGE_ALLOW_WRITES", true),
+                AllowWrites = ReadBool("REVIT_BRIDGE_ALLOW_WRITES", false),
             };
             Router = new BridgeRouter(Registry, policy);
             AppDomain.CurrentDomain.AssemblyResolve += ResolveLoadedAssembly;

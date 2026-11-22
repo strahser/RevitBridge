@@ -107,6 +107,19 @@ internal class McpHttpServer
             return;
         }
 
+        // The legacy HTTP surface has no token/write policy. Only GET is a
+        // read; every mutation must go through the WebSocket BridgeRouter.
+        if (!LegacyHttpPolicy.IsReadOnlyRequest(req.HttpMethod))
+        {
+            WriteJson(ctx, 403, new Dictionary<string, object>
+            {
+                { "ok", false },
+                { "error", LegacyHttpPolicy.WriteDisabledCode },
+                { "message", "Legacy HTTP writes are disabled; use WebSocket bridge commands." },
+            });
+            return;
+        }
+
         switch (req.HttpMethod + " " + path)
         {
             case "GET /ping":

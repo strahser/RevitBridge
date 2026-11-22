@@ -24,7 +24,7 @@ namespace RevitBridge.Core
         /// <summary>Empty token means "local dev, no auth" (live mode).</summary>
         public string Token { get; set; }
 
-        public bool AllowWrites { get; set; } = true;
+        public bool AllowWrites { get; set; } = false;
 
         public HashSet<string> DeniedCommands { get; }
 
