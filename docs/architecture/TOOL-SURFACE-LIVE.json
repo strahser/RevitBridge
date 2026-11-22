@@ -1,0 +1,775 @@
+{
+  "observed_at": "2026-11-22T14:33:47+03:00",
+  "total": 126,
+  "by_provider": {
+    "DwgParser": 57,
+    "HeatLossRevit4": 8,
+    "NetworkBuilder": 6,
+    "RevitBridge": 55
+  },
+  "by_prefix": {
+    "dwg": 57,
+    "heatloss": 8,
+    "nb": 6,
+    "pipeline": 33,
+    "revit": 22
+  },
+  "commands": [
+    {
+      "name": "dwg.BackupDocument",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: BackupDocument"
+    },
+    {
+      "name": "dwg.CloseDocument",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: CloseDocument"
+    },
+    {
+      "name": "dwg.CopyElement",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: CopyElement"
+    },
+    {
+      "name": "dwg.CreateCeiling",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: CreateCeiling"
+    },
+    {
+      "name": "dwg.CreateFloor",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: CreateFloor"
+    },
+    {
+      "name": "dwg.CreateGrid",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: CreateGrid"
+    },
+    {
+      "name": "dwg.CreateLevel",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: CreateLevel"
+    },
+    {
+      "name": "dwg.CreateRoof",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: CreateRoof"
+    },
+    {
+      "name": "dwg.CreateRoom",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: CreateRoom"
+    },
+    {
+      "name": "dwg.CreateSchedule",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: CreateSchedule"
+    },
+    {
+      "name": "dwg.CreateView3D",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: CreateView3D"
+    },
+    {
+      "name": "dwg.CreateWall",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: CreateWall"
+    },
+    {
+      "name": "dwg.CreateWallType",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: CreateWallType"
+    },
+    {
+      "name": "dwg.CutOpening",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: CutOpening"
+    },
+    {
+      "name": "dwg.DeleteElements",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: DeleteElements"
+    },
+    {
+      "name": "dwg.DocInfo",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: DocInfo"
+    },
+    {
+      "name": "dwg.DuplicateSchedule",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: DuplicateSchedule"
+    },
+    {
+      "name": "dwg.ExportSchedule",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: ExportSchedule"
+    },
+    {
+      "name": "dwg.GetBoundingBox",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: GetBoundingBox"
+    },
+    {
+      "name": "dwg.GetElement",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: GetElement"
+    },
+    {
+      "name": "dwg.GetSchedule",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: GetSchedule"
+    },
+    {
+      "name": "dwg.HvacApplySizing",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: HvacApplySizing"
+    },
+    {
+      "name": "dwg.HvacAuditNetwork",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: HvacAuditNetwork"
+    },
+    {
+      "name": "dwg.HvacGraphLoad",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: HvacGraphLoad"
+    },
+    {
+      "name": "dwg.HvacGraphRebuild",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: HvacGraphRebuild"
+    },
+    {
+      "name": "dwg.HvacMonitoringSnapshot",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: HvacMonitoringSnapshot"
+    },
+    {
+      "name": "dwg.HvacProbeW1",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: HvacProbeW1"
+    },
+    {
+      "name": "dwg.HvacSetSectionParams",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: HvacSetSectionParams"
+    },
+    {
+      "name": "dwg.ListCategories",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListCategories"
+    },
+    {
+      "name": "dwg.ListCeilings",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListCeilings"
+    },
+    {
+      "name": "dwg.ListCommands",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListCommands"
+    },
+    {
+      "name": "dwg.ListDuctTypes",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListDuctTypes"
+    },
+    {
+      "name": "dwg.ListFamilies",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListFamilies"
+    },
+    {
+      "name": "dwg.ListFloors",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListFloors"
+    },
+    {
+      "name": "dwg.ListGrids",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListGrids"
+    },
+    {
+      "name": "dwg.ListLevels",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListLevels"
+    },
+    {
+      "name": "dwg.ListMechanicalSystems",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListMechanicalSystems"
+    },
+    {
+      "name": "dwg.ListPipeTypes",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListPipeTypes"
+    },
+    {
+      "name": "dwg.ListPipingSystems",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListPipingSystems"
+    },
+    {
+      "name": "dwg.ListRoofs",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListRoofs"
+    },
+    {
+      "name": "dwg.ListRooms",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListRooms"
+    },
+    {
+      "name": "dwg.ListSchedules",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListSchedules"
+    },
+    {
+      "name": "dwg.ListWallTypes",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: ListWallTypes"
+    },
+    {
+      "name": "dwg.LoadFamily",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: LoadFamily"
+    },
+    {
+      "name": "dwg.MeasureDistance",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: MeasureDistance"
+    },
+    {
+      "name": "dwg.MirrorElement",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: MirrorElement"
+    },
+    {
+      "name": "dwg.ModifySchedule",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: ModifySchedule"
+    },
+    {
+      "name": "dwg.MoveElement",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: MoveElement"
+    },
+    {
+      "name": "dwg.OpenDocument",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: OpenDocument"
+    },
+    {
+      "name": "dwg.PingInfo",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: PingInfo"
+    },
+    {
+      "name": "dwg.PlaceFamily",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: PlaceFamily"
+    },
+    {
+      "name": "dwg.QueryElements",
+      "provider": "DwgParser",
+      "transaction": "read",
+      "description": "DwgParser live operation: QueryElements"
+    },
+    {
+      "name": "dwg.RefreshSchedule",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: RefreshSchedule"
+    },
+    {
+      "name": "dwg.RotateElement",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: RotateElement"
+    },
+    {
+      "name": "dwg.RunExternalCommand",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: RunExternalCommand"
+    },
+    {
+      "name": "dwg.SetActiveView",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: SetActiveView"
+    },
+    {
+      "name": "dwg.SetInstanceParam",
+      "provider": "DwgParser",
+      "transaction": "write",
+      "description": "DwgParser live operation: SetInstanceParam"
+    },
+    {
+      "name": "heatloss.about",
+      "provider": "HeatLossRevit4",
+      "transaction": "write",
+      "description": "Open HeatLoss about window."
+    },
+    {
+      "name": "heatloss.calculations",
+      "provider": "HeatLossRevit4",
+      "transaction": "write",
+      "description": "Open HeatLoss calculations window."
+    },
+    {
+      "name": "heatloss.main",
+      "provider": "HeatLossRevit4",
+      "transaction": "write",
+      "description": "Open the main HeatLoss window."
+    },
+    {
+      "name": "heatloss.modeling",
+      "provider": "HeatLossRevit4",
+      "transaction": "write",
+      "description": "Open HeatLoss modeling window."
+    },
+    {
+      "name": "heatloss.reports",
+      "provider": "HeatLossRevit4",
+      "transaction": "write",
+      "description": "Open HeatLoss reports window."
+    },
+    {
+      "name": "heatloss.settings",
+      "provider": "HeatLossRevit4",
+      "transaction": "write",
+      "description": "Open HeatLoss settings window."
+    },
+    {
+      "name": "heatloss.snapshot",
+      "provider": "HeatLossRevit4",
+      "transaction": "write",
+      "description": "Dump DirectShape diagnostics."
+    },
+    {
+      "name": "heatloss.tools",
+      "provider": "HeatLossRevit4",
+      "transaction": "write",
+      "description": "Open HeatLoss tools panel."
+    },
+    {
+      "name": "nb.build_branch",
+      "provider": "NetworkBuilder",
+      "transaction": "write",
+      "description": "Build a working branch: main duct -> takeoff -> straight duct -> FlexDuct -> diffuser in one mechanical system. Args are read from REVIT_BRIDGE_ARGS_JSON; the JSON result is returned in IExternalCommand.message."
+    },
+    {
+      "name": "nb.move_node",
+      "provider": "NetworkBuilder",
+      "transaction": "write",
+      "description": "Move the selected node and rebuild the connected branch."
+    },
+    {
+      "name": "nb.repair",
+      "provider": "NetworkBuilder",
+      "transaction": "write",
+      "description": "Reconcile/repair logical bindings and duplicate NB_NodeId values."
+    },
+    {
+      "name": "nb.show_ports",
+      "provider": "NetworkBuilder",
+      "transaction": "read",
+      "description": "Show/hide port markers for logical connectors."
+    },
+    {
+      "name": "nb.size_network",
+      "provider": "NetworkBuilder",
+      "transaction": "write",
+      "description": "Size network sections and rebuild the selected network."
+    },
+    {
+      "name": "nb.validate",
+      "provider": "NetworkBuilder",
+      "transaction": "read",
+      "description": "Validate the logical connector graph stored in the document."
+    },
+    {
+      "name": "pipeline.audit_model",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Collector audit: no existing pipes/fittings/equipment/generic models/systems"
+    },
+    {
+      "name": "pipeline.clear_model",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Delete links/spaces/model/created floor views, keep schedules/sheets/templates/levels/grids"
+    },
+    {
+      "name": "pipeline.collect_spec",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Collect OV elements for specification: systems, types, sizes, lengths, diagnostics"
+    },
+    {
+      "name": "pipeline.compose_sheet",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Compose a drawing sheet with duplicated views, safe box and box validation"
+    },
+    {
+      "name": "pipeline.connect_terminal_duct",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Connect an air terminal to a duct"
+    },
+    {
+      "name": "pipeline.create_level_explication",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Duplicate the room explication schedule and filter it by level"
+    },
+    {
+      "name": "pipeline.create_plan_view",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Create a floor plan view and apply a view template"
+    },
+    {
+      "name": "pipeline.create_sheet",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Create a sheet"
+    },
+    {
+      "name": "pipeline.create_spaces",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Create MEP spaces from linked rooms (or plan circuits) and validate Area>0"
+    },
+    {
+      "name": "pipeline.create_system",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Create a mechanical system and add elements"
+    },
+    {
+      "name": "pipeline.debug_spaces",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Debug space level ids, bounding boxes and locations"
+    },
+    {
+      "name": "pipeline.delete_spaces",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Delete MEP spaces (OST_MEP_SPACES) and validate no leftovers"
+    },
+    {
+      "name": "pipeline.delete_views",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Delete views by ids"
+    },
+    {
+      "name": "pipeline.export_sheet_pdf",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Export a sheet to PDF"
+    },
+    {
+      "name": "pipeline.get_schedule",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Read schedule table data (header + rows) natively"
+    },
+    {
+      "name": "pipeline.inspect_titleblock_family",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Inspect frame/stamp geometry of an existing title block family"
+    },
+    {
+      "name": "pipeline.layout_sheet",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Crop views, choose sheet format/scale, pack plan + room explication and validate"
+    },
+    {
+      "name": "pipeline.link_revit",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Link an AR .rvt model"
+    },
+    {
+      "name": "pipeline.list_sheets",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "List sheets"
+    },
+    {
+      "name": "pipeline.list_systems",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "List mechanical system instances and member counts"
+    },
+    {
+      "name": "pipeline.list_title_blocks",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Measure title block formats (A4/A3/A2/A1) from the template"
+    },
+    {
+      "name": "pipeline.list_views",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "List views and view templates"
+    },
+    {
+      "name": "pipeline.place_air_terminal",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Place an air terminal on a level and report its connectors"
+    },
+    {
+      "name": "pipeline.place_schedule",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Place a schedule on a sheet"
+    },
+    {
+      "name": "pipeline.place_view",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Place a view on a sheet"
+    },
+    {
+      "name": "pipeline.purge_model_content",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Delete existing model content (pipes/fittings/equipment/generic models/systems) and re-audit"
+    },
+    {
+      "name": "pipeline.regenerate",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Regenerate the active document"
+    },
+    {
+      "name": "pipeline.reset_energy_analysis",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Delete Revit energy analysis detail model and its analytical spaces"
+    },
+    {
+      "name": "pipeline.set_link_room_bounding",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Enable/disable Room Bounding on Revit link types"
+    },
+    {
+      "name": "pipeline.set_parameter",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Set any element/type parameter by name"
+    },
+    {
+      "name": "pipeline.set_view_crop",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Set a rectangular view crop (minMm/maxMm)"
+    },
+    {
+      "name": "pipeline.set_view_scale",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Set a view scale directly (View.Scale)"
+    },
+    {
+      "name": "pipeline.validate_system",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Validate a mechanical system: members, classification, flow, connectivity"
+    },
+    {
+      "name": "revit.ai_element_filter",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Filter elements by category/level/type/parameter"
+    },
+    {
+      "name": "revit.close_document",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Close the active document"
+    },
+    {
+      "name": "revit.color_splash",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Color elements by a parameter value"
+    },
+    {
+      "name": "revit.create_dimensions",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Create a linear dimension between two elements"
+    },
+    {
+      "name": "revit.create_line_element",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Create a wall/pipe/duct by two points"
+    },
+    {
+      "name": "revit.create_structural_framing",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Create a structural framing grid"
+    },
+    {
+      "name": "revit.current_view_elements",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Elements in the current view"
+    },
+    {
+      "name": "revit.current_view_info",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Current view info"
+    },
+    {
+      "name": "revit.doc_info",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Active document info and counts"
+    },
+    {
+      "name": "revit.element_parameters",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Read instance and type parameters of an element"
+    },
+    {
+      "name": "revit.list_levels",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "List levels"
+    },
+    {
+      "name": "revit.list_rooms",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "List rooms and MEP spaces"
+    },
+    {
+      "name": "revit.material_quantities",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Material areas and volumes"
+    },
+    {
+      "name": "revit.model_statistics",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Model statistics by category/type/level"
+    },
+    {
+      "name": "revit.new_project_from_template",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Create and save a project from a .rte template"
+    },
+    {
+      "name": "revit.open_document",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Open a .rvt document"
+    },
+    {
+      "name": "revit.operate_element",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Select/color/hide/isolate elements"
+    },
+    {
+      "name": "revit.ping",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Ping Revit and return version info"
+    },
+    {
+      "name": "revit.save_document",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Save the active document (optionally Save As)"
+    },
+    {
+      "name": "revit.selected_elements",
+      "provider": "RevitBridge",
+      "transaction": "read",
+      "description": "Currently selected elements"
+    },
+    {
+      "name": "revit.tag_rooms",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Tag rooms in the current view"
+    },
+    {
+      "name": "revit.tag_walls",
+      "provider": "RevitBridge",
+      "transaction": "write",
+      "description": "Tag walls in the current view"
+    }
+  ]
+}
