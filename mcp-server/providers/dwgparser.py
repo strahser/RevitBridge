@@ -34,9 +34,10 @@ class DwgParserProvider:
 
     name = "dwgparser"
 
-    def __init__(self, list_tools, call_tool):
+    def __init__(self, list_tools, call_tool, policy=None):
         self._list_tools = list_tools
         self._call_tool = call_tool
+        self._policy = policy
         self.last_error = ""
 
     def list_tools(self):
@@ -52,12 +53,16 @@ class DwgParserProvider:
             name = _field(tool, "name")
             if not name:
                 continue
+            canonical = "dwg." + bare_name(name)
+            annotations = dict(_field(tool, "annotations") or {})
+            if self._policy is not None:
+                annotations = self._policy.apply(canonical, annotations)
             specs.append(ToolSpec(
                 name=name,
-                canonical="dwg." + bare_name(name),
+                canonical=canonical,
                 description=_field(tool, "description") or "",
                 input_schema=_field(tool, "inputSchema") or {},
-                annotations=dict(_field(tool, "annotations") or {}),
+                annotations=annotations,
                 provider=self.name,
                 domain="dwg",
                 aliases=(),

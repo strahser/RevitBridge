@@ -811,6 +811,11 @@ def _get_gateway():
     from providers.revit_ws import RevitWsProvider
     from providers.dwgparser import DwgParserProvider
 
+    try:  # package import
+        from .dwg_policy import DwgToolPolicy
+    except ImportError:  # flat import
+        from dwg_policy import DwgToolPolicy  # type: ignore[no-redef]
+
     profile = os.getenv("MCP_PROFILE", "revit-read")
     allow_writes = os.getenv("MCP_ALLOW_WRITES", "").strip().casefold() in (
         "1", "true", "yes", "on",
@@ -822,7 +827,12 @@ def _get_gateway():
             "call", {"command": name, "args": args}, timeout=180
         ),
     ))
-    gateway.register(DwgParserProvider(_child_tools, _gateway_dwg_call))
+    try:
+        dwg_policy = DwgToolPolicy.load()
+    except Exception as exc:  # missing manifest: stay fail-closed
+        print("warning: DwgParser policy not loaded: " + str(exc), file=sys.stderr)
+        dwg_policy = DwgToolPolicy()
+    gateway.register(DwgParserProvider(_child_tools, _gateway_dwg_call, dwg_policy))
     gateway.register(StaticToolProvider())
     _GATEWAY = gateway
     return gateway
