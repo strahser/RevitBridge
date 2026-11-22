@@ -14,9 +14,11 @@ OpenCode --stdio--> mcp-server/server.py --WebSocket ws://127.0.0.1:17871/bridge
   `HttpListener` на `127.0.0.1:17871` (порт — `REVIT_BRIDGE_PORT`, fallback `REVIT_MCP_PORT`);
   HTTP `GET /health` + WebSocket `/bridge` (protocol v1, команды `bridge_ping/commands/call`), все вызовы
   Revit API выполняет на главном потоке через `ExternalEvent`.
-* **mcp-server/server.py** (Python, `mcp>=2.0`, только stdlib+`mcp`) —
-  stdio MCP-сервер с 8 инструментами. Если мост недоступен, `revit_open_document`
-  сам запускает `Revit.exe <файл>` и ждёт готовности.
+* **mcp-server/server.py** (Python, stdlib; дочернему DwgParser нужен `mcp>=2.0`) —
+  stdio MCP-фасад. В текущем состоянии: 61 static tool, до 126 dynamic WS-команд
+  (55 built-in + 71 из манифестов) и 106 `dwg_*` из дочернего DwgParser.
+  Read-only по умолчанию; `REVIT_BRIDGE_ALLOW_WRITES=1` включает запись в Revit.
+  Легаси HTTP принимает только `GET`; все `POST` → `403 legacy_write_disabled`.
 
 ## Установка (один раз)
 
@@ -40,39 +42,40 @@ OpenCode --stdio--> mcp-server/server.py --WebSocket ws://127.0.0.1:17871/bridge
 
 ## Инструменты
 
-| MCP-инструмент | HTTP | Назначение |
+| Инструмент | Транспорт | Назначение |
 |---|---|---|
-| `revit_ping` | `GET /ping` | жив ли мост, версия Revit |
-| `revit_open_document` | `POST /open` | открыть `.rvt` (+ автозапуск Revit) |
-| `revit_close_document` | `POST /close` | закрыть активный документ |
-| `revit_doc_info` | `GET /doc` | заголовок/путь/счётчики помещений |
-| `revit_list_rooms` | `GET /rooms` | помещения + MEP-пространства (пагинация) |
-| `revit_list_levels` | `GET /levels` | уровни |
-| `revit_commands` | `GET /commands` | ключи команд HeatLoss |
-| `revit_run_heatloss` | `POST /run` | запустить окно плагина HeatLoss |
+| `revit_ping`, `revit_doc_info`, `revit_list_levels`, `revit_list_rooms` | WS | базовое чтение документа |
+| `revit_open_document`, `revit_close_document` | WS | открыть/закрыть активный документ (без HTTP POST) |
+| `bridge_commands`, `bridge_status` | WS/GET | диагностика моста и список команд |
+| `bridge_call`, `revit_call` | WS | generic-вызов команды; write блокируется политикой |
+| `cmd_*` | WS | динамические команды провайдеров (126 live) |
+| `dwg_*` | stdio child | DWG/DXF/PDF/3D из DwgParser |
 
-Ключи `revit_run_heatloss`: `settings`, `modeling`, `calculations` (= по умолчанию),
-`main`, `reports`, `tools`, `about`, `snapshot`.
+`revit_run_heatloss` и остальные legacy static write tools без WS-команды
+сейчас возвращают `legacy_write_disabled`: HTTP POST закрыт, перенос на WS — P3/P4.
+Для записи в Revit нужен `REVIT_BRIDGE_ALLOW_WRITES=1` и write-профиль MCP.
 
 ## Единый MCP (P3)
 
 Один сервер `revit-bridge` (stdio) объединяет:
 
-- статические `bridge_*` / `revit_*` инструменты (HTTP API add-in);
-- динамические `cmd_<provider>_<command>` — все команды из `bridge.manifest.json`
-  (NetworkBuilder, DwgParser liveOps, HeatLoss);
+- статические `bridge_*` / `revit_*` инструменты (61);
+- динамические `cmd_<provider>_<command>` — все команды из live `commands.list`
+  (126 = 55 built-in + 57 DwgParser + 8 HeatLoss + 6 NetworkBuilder);
 - `dwg_*` — прокси DwgParser MCP (DWG/DXF/PDF/3D), дочерний процесс
-  `DwgParser/mcp_server.py` (override: `DWGPARSER_MCP_SERVER`);
+  `DwgParser/mcp_server.py` (override: `DWGPARSER_MCP_SERVER`), 106 инструментов;
 - `revit_call` — generic-вызов любой bridge-команды.
 
-Итого ~239 инструментов в одном MCP. Отдельный `dwgparser` MCP больше не нужен.
+Итого до ~293 имён в одном MCP (с дублями legacy/WS). P2-gateway (`tools_search`,
+`tools_describe`, `tools_call`) сокращает прямой список до 8–10 инструментов.
 
 ## Live / background / test (P6)
 
 - **Live:** пользователь открыл Revit; `revit-bridge` подключается к add-in, `bridge_status`
   показывает `bridge` + активный документ.
-- **Background:** `revit_open_document(launch_if_needed=true, wait_sec=300)` запускает Revit
-  с моделью и ждёт готовности моста; `revit_close_document(save=false)` завершает сценарий.
+- **Background:** запусти Revit с нужной моделью заранее; после P1 static
+  `revit_open_document` идёт в WS и требует уже работающий Revit.
+  `revit_close_document(save=false)` завершает сценарий.
   Revit остаётся GUI-процессом; это автоматизация без ручных кликов, не headless.
 - **Test:** `RevitHeadless`/`Nice3point.TUnit.Revit` — отдельный контур, мост не участвует.
 - **Безопасность:** `REVIT_BRIDGE_TOKEN` (hello-token), `REVIT_BRIDGE_ALLOW_WRITES=0` —
