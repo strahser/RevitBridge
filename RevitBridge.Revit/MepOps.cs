@@ -111,6 +111,52 @@ namespace RevitBridge
         public static object ValidateSystem(UIApplication app, JObject args)
         {
             var doc = BridgeOps.Doc(app);
+            var system = ResolveSystem(doc, args);
+            var members = FindSystemMembers(doc, system);
+            var ducts = members.OfType<Duct>().ToList();
+            var terminals = members
+                .Where(e => e.Category?.Id.Value == (int)BuiltInCategory.OST_DuctTerminal)
+                .OfType<FamilyInstance>().ToList();
+
+            var ductClassification = ducts
+                .Select(d => d.LookupParameter("Классификация систем")?.AsString())
+                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+            var classificationMismatches = FindClassificationMismatches(members, ductClassification);
+            var zeroFlow = FindZeroFlow(terminals);
+            var openConnectors = FindOpenConnectors(members);
+            var issues = BuildSystemIssues(system, ducts.Count, terminals.Count,
+                classificationMismatches.Count, zeroFlow.Count);
+
+            var assembled = !system.IsEmpty && !system.IsMultipleNetwork &&
+                            ducts.Count > 0 && terminals.Count > 0 &&
+                            classificationMismatches.Count == 0 && zeroFlow.Count == 0;
+
+            return new Dictionary<string, object>
+            {
+                { "id", system.Id.Value },
+                { "name", system.Name },
+                { "systemType", system.SystemType.ToString() },
+                { "members", members.Count },
+                { "ducts", ducts.Count },
+                { "terminals", terminals.Count },
+                { "wellConnected", system.IsWellConnected },
+                { "empty", system.IsEmpty },
+                { "multipleNetwork", system.IsMultipleNetwork },
+                { "validSystem", system.IsValid },
+                { "assembled", assembled },
+                { "sections", system.SectionsCount },
+                { "ductClassification", ductClassification },
+                { "classificationMismatches", classificationMismatches },
+                { "zeroFlowTerminals", zeroFlow },
+                { "openConnectors", openConnectors },
+                { "issues", issues },
+                { "valid", issues.Count == 0 },
+            };
+        }
+
+        private static MechanicalSystem ResolveSystem(Document doc, JObject args)
+        {
             var systemId = args?.Value<long?>("systemId");
             var name = args?.Value<string>("name");
 
@@ -124,7 +170,11 @@ namespace RevitBridge
             system ??= new FilteredElementCollector(doc).OfClass(typeof(MechanicalSystem))
                 .Cast<MechanicalSystem>().FirstOrDefault();
             if (system == null) throw new InvalidOperationException("Mechanical system not found.");
+            return system;
+        }
 
+        private static List<Element> FindSystemMembers(Document doc, MechanicalSystem system)
+        {
             var categories = new[]
             {
                 BuiltInCategory.OST_DuctCurves,
@@ -135,7 +185,7 @@ namespace RevitBridge
                 BuiltInCategory.OST_MechanicalEquipment,
             };
 
-            var members = categories
+            return categories
                 .SelectMany(category => new FilteredElementCollector(doc)
                     .OfCategory(category).WhereElementIsNotElementType().ToElements())
                 .GroupBy(e => e.Id.Value).Select(g => g.First())
@@ -147,17 +197,12 @@ namespace RevitBridge
                         system.Name, StringComparison.OrdinalIgnoreCase);
                 })
                 .ToList();
+        }
 
-            var ducts = members.OfType<Duct>().ToList();
-            var terminals = members
-                .Where(e => e.Category?.Id.Value == (int)BuiltInCategory.OST_DuctTerminal)
-                .OfType<FamilyInstance>().ToList();
-
-            var ductClassification = ducts
-                .Select(d => d.LookupParameter("Классификация систем")?.AsString())
-                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-
-            var classificationMismatches = members
+        private static List<Dictionary<string, object>> FindClassificationMismatches(
+            List<Element> members, string ductClassification)
+        {
+            return members
                 .Select(e => new
                 {
                     Element = e,
@@ -174,7 +219,10 @@ namespace RevitBridge
                     { "classification", x.Classification },
                 })
                 .ToList();
+        }
 
+        private static List<Dictionary<string, object>> FindZeroFlow(List<FamilyInstance> terminals)
+        {
             var zeroFlow = new List<Dictionary<string, object>>();
             foreach (var terminal in terminals)
             {
@@ -191,7 +239,11 @@ namespace RevitBridge
                     });
                 }
             }
+            return zeroFlow;
+        }
 
+        private static List<Dictionary<string, object>> FindOpenConnectors(List<Element> members)
+        {
             var openConnectors = new List<Dictionary<string, object>>();
             foreach (var member in members)
             {
@@ -225,42 +277,22 @@ namespace RevitBridge
                     });
                 }
             }
+            return openConnectors;
+        }
 
+        private static List<string> BuildSystemIssues(MechanicalSystem system, int ducts,
+            int terminals, int classificationMismatches, int zeroFlow)
+        {
             var issues = new List<string>();
             if (system.IsEmpty) issues.Add("system is empty");
             if (!system.IsWellConnected) issues.Add("system is not well connected");
             if (system.IsMultipleNetwork) issues.Add("system is multiple network");
             if (!system.IsValid) issues.Add("system is not valid");
-            if (ducts.Count == 0) issues.Add("no ducts in system");
-            if (terminals.Count == 0) issues.Add("no air terminals in system");
-            if (classificationMismatches.Count > 0) issues.Add("system classification mismatch");
-            if (zeroFlow.Count > 0) issues.Add("air terminal flow is zero");
-
-            var assembled = !system.IsEmpty && !system.IsMultipleNetwork &&
-                            ducts.Count > 0 && terminals.Count > 0 &&
-                            classificationMismatches.Count == 0 && zeroFlow.Count == 0;
-
-            return new Dictionary<string, object>
-            {
-                { "id", system.Id.Value },
-                { "name", system.Name },
-                { "systemType", system.SystemType.ToString() },
-                { "members", members.Count },
-                { "ducts", ducts.Count },
-                { "terminals", terminals.Count },
-                { "wellConnected", system.IsWellConnected },
-                { "empty", system.IsEmpty },
-                { "multipleNetwork", system.IsMultipleNetwork },
-                { "validSystem", system.IsValid },
-                { "assembled", assembled },
-                { "sections", system.SectionsCount },
-                { "ductClassification", ductClassification },
-                { "classificationMismatches", classificationMismatches },
-                { "zeroFlowTerminals", zeroFlow },
-                { "openConnectors", openConnectors },
-                { "issues", issues },
-                { "valid", issues.Count == 0 },
-            };
+            if (ducts == 0) issues.Add("no ducts in system");
+            if (terminals == 0) issues.Add("no air terminals in system");
+            if (classificationMismatches > 0) issues.Add("system classification mismatch");
+            if (zeroFlow > 0) issues.Add("air terminal flow is zero");
+            return issues;
         }
 
         public static object ConnectTerminalToDuct(UIApplication app, JObject args)
