@@ -309,6 +309,7 @@
     "bridge": [
       "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\BridgeCommandHost.cs",
       "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\Commands\\CommandModule.cs",
+      "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\Commands\\PipelineModule.cs",
       "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\Commands\\RevitCoreModule.cs"
     ],
     "dwg": "D:\\Projects\\01-bim\\DwgParser\\mcp_server.py",
