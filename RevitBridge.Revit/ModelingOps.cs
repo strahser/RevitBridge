@@ -234,50 +234,60 @@ internal static partial class McpOps
         var uidoc = app.ActiveUIDocument;
         if (uidoc == null) throw new InvalidOperationException("No active document");
         var doc = uidoc.Document;
-        // find family symbol
-        FamilySymbol symbol = null;
-        foreach (FamilySymbol fs in new FilteredElementCollector(doc).OfClass(typeof(FamilySymbol)))
-        {
-            if (fs.Family.Name == familyName && fs.Name == typeName) { symbol = fs; break; }
-        }
-        if (symbol == null) throw new InvalidOperationException("Family/type not found: " + familyName + " : " + typeName);
+        var symbol = FindFamilySymbol(doc, familyName, typeName);
         using (var tx = new Transaction(doc, "Place Family"))
         {
             tx.Start();
             if (!symbol.IsActive) symbol.Activate();
             var loc = new XYZ(locationMm[0] / 304.8, locationMm[1] / 304.8, (locationMm.Length > 2 ? locationMm[2] : 0) / 304.8);
-            FamilyInstance fi;
-            if (hostWallId.HasValue)
-            {
-                var wall = doc.GetElement(new ElementId(hostWallId.Value)) as Wall;
-                fi = doc.Create.NewFamilyInstance(loc, symbol, wall, Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
-            }
-            else
-            {
-                var level = new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>().FirstOrDefault();
-                fi = doc.Create.NewFamilyInstance(loc, symbol, level, Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
-            }
-            if (Math.Abs(rotationDeg) > 1e-9)
-            {
-                var axis = Line.CreateBound(loc, loc + XYZ.BasisZ);
-                ElementTransformUtils.RotateElement(doc, fi.Id, axis, rotationDeg * Math.PI / 180.0);
-            }
-            if (parameters != null)
-            {
-                foreach (var kv in parameters)
-                {
-                    var p = fi.LookupParameter(kv.Key);
-                    if (p != null && !p.IsReadOnly)
-                    {
-                        if (kv.Value is double d) p.Set(d);
-                        else if (kv.Value is int i) p.Set(i);
-                        else if (kv.Value is string s) p.Set(s);
-                        else if (kv.Value is bool b) p.Set(b ? 1 : 0);
-                    }
-                }
-            }
+            var fi = CreateFamilyInstance(doc, symbol, loc, hostWallId);
+            ApplyRotation(doc, fi, loc, rotationDeg);
+            ApplyParameters(fi, parameters);
             tx.Commit();
             return new Dictionary<string, object> { { "id", fi.Id.Value }, { "uniqueId", fi.UniqueId } };
+        }
+    }
+
+    private static FamilySymbol FindFamilySymbol(Document doc, string familyName, string typeName)
+    {
+        foreach (FamilySymbol fs in new FilteredElementCollector(doc).OfClass(typeof(FamilySymbol)))
+        {
+            if (fs.Family.Name == familyName && fs.Name == typeName) return fs;
+        }
+        throw new InvalidOperationException("Family/type not found: " + familyName + " : " + typeName);
+    }
+
+    private static FamilyInstance CreateFamilyInstance(Document doc, FamilySymbol symbol, XYZ loc, long? hostWallId)
+    {
+        if (hostWallId.HasValue)
+        {
+            var wall = doc.GetElement(new ElementId(hostWallId.Value)) as Wall;
+            return doc.Create.NewFamilyInstance(loc, symbol, wall,
+                Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
+        }
+        var level = new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>().FirstOrDefault();
+        return doc.Create.NewFamilyInstance(loc, symbol, level,
+            Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
+    }
+
+    private static void ApplyRotation(Document doc, FamilyInstance fi, XYZ loc, double rotationDeg)
+    {
+        if (Math.Abs(rotationDeg) <= 1e-9) return;
+        var axis = Line.CreateBound(loc, loc + XYZ.BasisZ);
+        ElementTransformUtils.RotateElement(doc, fi.Id, axis, rotationDeg * Math.PI / 180.0);
+    }
+
+    private static void ApplyParameters(FamilyInstance fi, Dictionary<string, object> parameters)
+    {
+        if (parameters == null) return;
+        foreach (var kv in parameters)
+        {
+            var p = fi.LookupParameter(kv.Key);
+            if (p == null || p.IsReadOnly) continue;
+            if (kv.Value is double d) p.Set(d);
+            else if (kv.Value is int i) p.Set(i);
+            else if (kv.Value is string s) p.Set(s);
+            else if (kv.Value is bool b) p.Set(b ? 1 : 0);
         }
     }
 
