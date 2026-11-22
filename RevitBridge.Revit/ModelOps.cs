@@ -198,9 +198,33 @@ namespace RevitBridge
             return new Dictionary<string, object> { { "ok", true } };
         }
 
-        public static object CreateSpaces(UIApplication app, JObject args)
+        private sealed class SpaceContext
         {
-            var doc = BridgeOps.Doc(app);
+            public Phase Phase;
+            public List<Level> Levels;
+            public RevitLinkInstance Link;
+        }
+
+        private sealed class SpaceCreationState
+        {
+            public int Created;
+            public int Skipped;
+            public List<ElementId> CreatedIds = new List<ElementId>();
+            public List<Tuple<ElementId, long, string, double>> HeightChecks =
+                new List<Tuple<ElementId, long, string, double>>();
+        }
+
+        private sealed class HeightReport
+        {
+            public int Checked;
+            public int Matched;
+            public int Skipped;
+            public List<Dictionary<string, object>> Mismatches;
+            public bool Valid;
+        }
+
+        private static SpaceContext PrepareSpaceContext(Document doc)
+        {
             var phase = doc.Phases.Cast<Phase>().OrderBy(p => p.Id.Value).FirstOrDefault()
                 ?? throw new InvalidOperationException("No phase in document.");
             var levels = new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>().ToList();
@@ -225,86 +249,100 @@ namespace RevitBridge
                 }
             }
 
-            var created = 0;
-            var skipped = 0;
-            var createdIds = new List<ElementId>();
-            var heightChecks = new List<Tuple<ElementId, long, string, double>>();
-            var fitHeight = args?.Value<bool?>("fitHeight") ?? true;
-            using (var tx = new Transaction(doc, "Bridge Create Spaces"))
+            return new SpaceContext { Phase = phase, Levels = levels, Link = link };
+        }
+
+        private static bool CreateSpacesFromLink(Document doc, SpaceContext context,
+            bool fitHeight, SpaceCreationState state)
+        {
+            var link = context.Link;
+            if (link != null && link.GetLinkDocument() != null)
             {
-                tx.Start();
-
-                if (link != null && link.GetLinkDocument() != null)
+                var linkDoc = link.GetLinkDocument();
+                var transform = link.GetTotalTransform();
+                foreach (var room in new FilteredElementCollector(linkDoc)
+                    .OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().Cast<Room>())
                 {
-                    var linkDoc = link.GetLinkDocument();
-                    var transform = link.GetTotalTransform();
-                    foreach (var room in new FilteredElementCollector(linkDoc)
-                        .OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().Cast<Room>())
-                    {
-                        var point = (room.Location as LocationPoint)?.Point
-                                    ?? (room.get_BoundingBox(null) is BoundingBoxXYZ b
-                                        ? (b.Min + b.Max) * 0.5 : null);
-                        if (point == null) { skipped++; continue; }
-                        var hostPoint = transform.OfPoint(point);
-                        var level = levels.FirstOrDefault(l => l.Name == room.Level?.Name)
-                                    ?? levels.OrderBy(l => Math.Abs(l.Elevation - hostPoint.Z)).First();
-                        try
-                        {
-                            var space = doc.Create.NewSpace(level, phase, new UV(hostPoint.X, hostPoint.Y));
-                            if (space == null) { skipped++; continue; }
-                            try { space.Number = room.Number; space.Name = room.Name; } catch (Exception) { }
-
-                            // Height source: Room.UnboundedHeight, or Volume/Area when unbounded.
-                            var roomHeight = room.UnboundedHeight;
-                            if (!(roomHeight > 0) && room.Area > 0 && room.Volume > 0)
-                                roomHeight = room.Volume / room.Area;
-                            if (roomHeight > 0 && fitHeight)
-                            {
-                                try
-                                {
-                                    var upperOffset = space.get_Parameter(BuiltInParameter.ROOM_UPPER_OFFSET);
-                                    if (upperOffset != null && !upperOffset.IsReadOnly)
-                                        upperOffset.Set(roomHeight);
-                                    else
-                                        space.LimitOffset = roomHeight;
-                                }
-                                catch (Exception) { }
-                            }
-                            heightChecks.Add(Tuple.Create(space.Id, room.Id.Value,
-                                room.Number ?? "", roomHeight));
-
-                            createdIds.Add(space.Id);
-                            created++;
-                        }
-                        catch (Exception) { skipped++; }
-                    }
+                    CreateSpaceFromRoom(doc, room, transform, context, fitHeight, state);
                 }
-                else
-                {
-                    // Fallback: plan circuits per level (works when the host itself is bounded).
-                    foreach (var level in levels)
-                    {
-                        PlanTopology topology;
-                        try { topology = doc.get_PlanTopology(level); } catch (Exception) { continue; }
-                        foreach (PlanCircuit circuit in topology.Circuits)
-                        {
-                            try
-                            {
-                                var uv = circuit.GetPointInside();
-                                if (doc.GetSpaceAtPoint(new XYZ(uv.U, uv.V, level.Elevation), phase) != null) continue;
-                                var space = doc.Create.NewSpace(level, phase, uv);
-                                if (space == null) { skipped++; continue; }
-                                createdIds.Add(space.Id);
-                                created++;
-                            }
-                            catch (Exception) { skipped++; }
-                        }
-                    }
-                }
-
-                tx.Commit();
+                return true;
             }
+            return false;
+        }
 
+        private static void CreateSpaceFromRoom(Document doc, Room room, Transform transform,
+            SpaceContext context, bool fitHeight, SpaceCreationState state)
+        {
+            var point = (room.Location as LocationPoint)?.Point
+                        ?? (room.get_BoundingBox(null) is BoundingBoxXYZ b
+                            ? (b.Min + b.Max) * 0.5 : null);
+            if (point == null) { state.Skipped++; return; }
+            var hostPoint = transform.OfPoint(point);
+            var level = context.Levels.FirstOrDefault(l => l.Name == room.Level?.Name)
+                        ?? context.Levels.OrderBy(l => Math.Abs(l.Elevation - hostPoint.Z)).First();
+            try
+            {
+                var space = doc.Create.NewSpace(level, context.Phase, new UV(hostPoint.X, hostPoint.Y));
+                if (space == null) { state.Skipped++; return; }
+                try { space.Number = room.Number; space.Name = room.Name; } catch (Exception) { }
+
+                var roomHeight = ApplyRoomHeight(space, room, fitHeight);
+                state.HeightChecks.Add(Tuple.Create(space.Id, room.Id.Value,
+                    room.Number ?? "", roomHeight));
+
+                state.CreatedIds.Add(space.Id);
+                state.Created++;
+            }
+            catch (Exception) { state.Skipped++; }
+        }
+
+        private static double ApplyRoomHeight(Space space, Room room, bool fitHeight)
+        {
+            // Height source: Room.UnboundedHeight, or Volume/Area when unbounded.
+            var roomHeight = room.UnboundedHeight;
+            if (!(roomHeight > 0) && room.Area > 0 && room.Volume > 0)
+                roomHeight = room.Volume / room.Area;
+            if (roomHeight > 0 && fitHeight)
+            {
+                try
+                {
+                    var upperOffset = space.get_Parameter(BuiltInParameter.ROOM_UPPER_OFFSET);
+                    if (upperOffset != null && !upperOffset.IsReadOnly)
+                        upperOffset.Set(roomHeight);
+                    else
+                        space.LimitOffset = roomHeight;
+                }
+                catch (Exception) { }
+            }
+            return roomHeight;
+        }
+
+        private static void CreateSpacesFromCircuits(Document doc, SpaceContext context,
+            bool fitHeight, SpaceCreationState state)
+        {
+            // Fallback: plan circuits per level (works when the host itself is bounded).
+            foreach (var level in context.Levels)
+            {
+                PlanTopology topology;
+                try { topology = doc.get_PlanTopology(level); } catch (Exception) { continue; }
+                foreach (PlanCircuit circuit in topology.Circuits)
+                {
+                    try
+                    {
+                        var uv = circuit.GetPointInside();
+                        if (doc.GetSpaceAtPoint(new XYZ(uv.U, uv.V, level.Elevation), context.Phase) != null) continue;
+                        var space = doc.Create.NewSpace(level, context.Phase, uv);
+                        if (space == null) { state.Skipped++; continue; }
+                        state.CreatedIds.Add(space.Id);
+                        state.Created++;
+                    }
+                    catch (Exception) { state.Skipped++; }
+                }
+            }
+        }
+
+        private static int CountBounded(Document doc, List<ElementId> createdIds)
+        {
             // Post-condition: every created space must exist and be bounded (Area > 0).
             var bounded = 0;
             foreach (var id in createdIds)
@@ -312,19 +350,28 @@ namespace RevitBridge
                 var space = doc.GetElement(id) as Space;
                 if (space != null && space.Area > 0) bounded++;
             }
+            return bounded;
+        }
 
-            // Height validator: Space.UnboundedHeight vs linked Room.UnboundedHeight (or V/A).
+        private static void RegenerateSpaces(Document doc)
+        {
             using (var regen = new Transaction(doc, "Bridge Regenerate Spaces"))
             {
                 regen.Start();
                 doc.Regenerate();
                 regen.Commit();
             }
+        }
+
+        private static HeightReport ValidateHeights(Document doc,
+            List<Tuple<ElementId, long, string, double>> checks)
+        {
+            // Height validator: Space.UnboundedHeight vs linked Room.UnboundedHeight (or V/A).
             var heightChecked = 0;
             var heightMatched = 0;
             var heightSkipped = 0;
             var heightMismatches = new List<Dictionary<string, object>>();
-            foreach (var check in heightChecks)
+            foreach (var check in checks)
             {
                 var space = doc.GetElement(check.Item1) as Space;
                 if (space == null) { heightSkipped++; continue; }
@@ -350,17 +397,58 @@ namespace RevitBridge
             }
 
             var heightValid = heightChecked == 0 || heightMatched == heightChecked;
+            return new HeightReport
+            {
+                Checked = heightChecked,
+                Matched = heightMatched,
+                Skipped = heightSkipped,
+                Mismatches = heightMismatches,
+                Valid = heightValid,
+            };
+        }
+
+        private static Dictionary<string, object> BuildResult(SpaceCreationState state,
+            int bounded, HeightReport report)
+        {
+            var created = state.Created;
+            var skipped = state.Skipped;
+            var heightChecked = report.Checked;
+            var heightMatched = report.Matched;
+            var heightSkipped = report.Skipped;
+            var heightMismatches = report.Mismatches;
+            var heightValid = report.Valid;
             return new Dictionary<string, object>
             {
                 { "created", created }, { "skipped", skipped },
                 { "bounded", bounded }, { "unbounded", created - bounded },
                 { "heightChecked", heightChecked }, { "heightMatched", heightMatched },
-                { "heightMismatched", heightChecked - heightMatched },
+                { "heightMismatched", report.Checked - report.Matched },
                 { "heightSkipped", heightSkipped },
                 { "heightMismatches", heightMismatches },
                 { "heightValid", heightValid },
                 { "valid", (created == 0 || bounded == created) && heightValid },
             };
+        }
+
+        public static object CreateSpaces(UIApplication app, JObject args)
+        {
+            var doc = BridgeOps.Doc(app);
+            var context = PrepareSpaceContext(doc);
+            var state = new SpaceCreationState();
+            var fitHeight = args?.Value<bool?>("fitHeight") ?? true;
+
+            using (var tx = new Transaction(doc, "Bridge Create Spaces"))
+            {
+                tx.Start();
+                if (!CreateSpacesFromLink(doc, context, fitHeight, state))
+                    CreateSpacesFromCircuits(doc, context, fitHeight, state);
+                tx.Commit();
+            }
+
+            var bounded = CountBounded(doc, state.CreatedIds);
+            RegenerateSpaces(doc);
+            var report = ValidateHeights(doc, state.HeightChecks);
+            return BuildResult(state, bounded, report);
         }
 
         /// <summary>
