@@ -30,17 +30,26 @@
 
 ## DwgParser
 
-В репозитории **нет** `.sln`/`.slnx` (только 20 `.csproj`: `BimExtractor`, `RevitBimCore`,
-`RevitHeadless`, `AccCore`, `external`). `load_solution` требует решение, поэтому варианты:
+В репозитории теперь есть `DwgParser.slnx` (18 first-party проектов: `BimExtractor`,
+`RevitBimCore`, `RevitHeadless`, `AccCore`). Проверено 2026-11-22:
 
-1. Создать решение (рекомендуется, отдельный коммит):
-   ```powershell
-   cd D:\Projects\01-bim\DwgParser
-   dotnet new sln -n DwgParser
-   dotnet sln DwgParser.sln add BimExtractor\**\*.csproj RevitBimCore\**\*.csproj RevitHeadless\RevitHeadless.csproj
-   ```
-   `external\ExcelSpecificationGOST` и `AccCore` подключать по необходимости.
-2. Либо анализировать DwgParser точечно через `astgrep`/grep, пока решение не создано.
+```jsonc
+// tools_call("load_solution", { "path": "D:\\Projects\\01-bim\\DwgParser\\DwgParser.slnx" })
+{ "loaded": "Loaded 18 project(s) ... 3 project(s) loaded with unresolved references" }
+```
+
+Три проекта (`RevitHeadless`, `RevitBimCore.Infrastructure`, `RevitBimCore.Infrastructure.Tests`)
+не разрешили metadata references (Revit API / design-time build) — для них результаты графа
+могут быть неполными, остальные 15 проектов индексируются нормально.
+
+Для чисто BimExtractor-аудита можно загрузить подмножество:
+
+```jsonc
+{ "path": "...\\DwgParser.slnx", "include": ["BimExtractor.*"] }
+```
+
+`external\ExcelSpecificationGOST` и устаревший `tests\BimExtractor.Tests` (ссылается на
+несуществующий `src\BimExtractor.*`) в решение не включены.
 
 ## Порядок для аудита
 
