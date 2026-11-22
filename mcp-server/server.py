@@ -54,9 +54,13 @@ REVIT_CANDIDATES = [
 if os.environ.get("REVIT_EXE"):
     REVIT_CANDIDATES.insert(0, os.environ["REVIT_EXE"])
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(HERE)
+
 DEFAULT_MODEL = os.environ.get(
     "REVIT_DEFAULT_MODEL",
-    r"E:\ПлагиныРевит\Данные теплотехнический расчет\newBuilding\HvackFinal.rvt",
+    os.path.join(os.path.dirname(REPO_ROOT), "DwgParser", "output",
+                 "K1_HVAC_demo.rvt"),
 )
 
 BRIDGE_URL = os.environ.get("REVIT_BRIDGE_URL", "ws://127.0.0.1:17871/bridge")
@@ -196,7 +200,7 @@ def _dynamic_tools():
 
 DWGPARSER_SERVER = os.environ.get(
     "DWGPARSER_MCP_SERVER",
-    r"D:\Projects\01-bim\DwgParser\mcp_server.py",
+    os.path.join(os.path.dirname(REPO_ROOT), "DwgParser", "mcp_server.py"),
 )
 DWGPARSER_ROOT = os.path.dirname(DWGPARSER_SERVER)
 _CHILD = None
