@@ -115,7 +115,7 @@ namespace RevitBridge.Commands
 
             registrar.Add("pipeline.compose_sheet", "Compose a drawing sheet with duplicated views, safe box and box validation", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"titleBlockName\":{\"type\":\"string\"},\"number\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"marginMm\":{\"type\":\"number\"},\"gapMm\":{\"type\":\"number\"},\"stampReserveMm\":{\"type\":\"number\"},\"safeBoxMm\":{\"type\":\"array\"},\"cropMarginMm\":{\"type\":\"number\"},\"cropIncludeLinked\":{\"type\":\"boolean\"},\"clearSheet\":{\"type\":\"boolean\"},\"independentCopy\":{\"type\":\"boolean\"},\"drawFrame\":{\"type\":\"boolean\"},\"labelViews\":{\"type\":\"boolean\"},\"views\":{\"type\":\"array\"},\"schedules\":{\"type\":\"array\"}},\"required\":[\"views\"]}"),
-                (app, args) => SheetComposeOps.ComposeSheet(app, args as JObject ?? new JObject()), 600000);
+                (app, args) => SheetComposer.ComposeSheet(app, args as JObject ?? new JObject()), 600000);
 
             registrar.Add("pipeline.list_title_blocks", "Measure title block formats (A4/A3/A2/A1) from the template", BridgeTransaction.Read, null,
                 (app, args) => SheetLayoutOps.ListTitleBlocks(app, args as JObject ?? new JObject()), 120000);
