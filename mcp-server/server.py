@@ -21,6 +21,7 @@ Usage: python -X utf8 server.py
 Env: REVIT_MCP_URL (default http://127.0.0.1:17871), REVIT_EXE (override),
      REVIT_DEFAULT_MODEL (override default .rvt path)
 """
+import hashlib
 import json
 import os
 import re
@@ -34,6 +35,11 @@ try:  # package import
     from .models import PolicyError, ProviderHealth, ToolSpec
 except ImportError:  # flat import: <mcp-server> directory is on sys.path
     from models import PolicyError, ProviderHealth, ToolSpec  # type: ignore[no-redef]
+
+try:  # optional SQLite cache/audit
+    from .catalog_store import CatalogStore
+except ImportError:  # flat import
+    from catalog_store import CatalogStore  # type: ignore[no-redef]
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "revit-bridge"
@@ -709,6 +715,66 @@ class StaticToolProvider:
 
 
 _GATEWAY = None
+_CATALOG_STORE = None
+
+
+def _get_catalog_store():
+    """Optional SQLite cache/audit (MCP_CATALOG_DB). Never required."""
+    global _CATALOG_STORE
+    path = os.getenv("MCP_CATALOG_DB", "").strip()
+    if not path:
+        return None
+    if _CATALOG_STORE is None:
+        try:
+            _CATALOG_STORE = CatalogStore(path)
+        except Exception:
+            _CATALOG_STORE = None
+    return _CATALOG_STORE
+
+
+def _store_spec(row):
+    try:
+        input_schema = json.loads(row.get("input_schema_json") or "{}")
+    except (TypeError, ValueError):
+        input_schema = {}
+    return {
+        "name": row.get("name"),
+        "canonical": row.get("canonical"),
+        "description": row.get("description") or "",
+        "domain": row.get("domain") or "",
+        "provider": row.get("provider") or "",
+        "annotations": {
+            "readOnlyHint": bool(row.get("read_only")),
+            "writesDocument": not bool(row.get("read_only")),
+            "destructiveHint": bool(row.get("destructive")),
+            "requiresConfirmation": bool(row.get("requires_confirmation")),
+            "backupRequired": bool(row.get("backup_required")),
+        },
+        "deprecated": not bool(row.get("enabled", 1)),
+        "aliases": list(row.get("aliases") or []),
+        "inputSchema": input_schema,
+    }
+
+
+def _args_hash(args):
+    payload = json.dumps(args or {}, ensure_ascii=False, sort_keys=True,
+                         default=str).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def _audit_call(name, status, started, args=None, error_code=""):
+    store = _get_catalog_store()
+    if store is None:
+        return
+    try:
+        store.record_call(
+            name or "", status,
+            duration_ms=int((time.time() - started) * 1000),
+            args_hash=_args_hash(args),
+            error_code=error_code,
+        )
+    except Exception:
+        pass
 
 
 def _gateway_commands():
@@ -784,12 +850,22 @@ def _bridge_unavailable(exc):
 
 
 def _gateway_search(args):
+    query = args.get("query") or ""
+    domain = args.get("domain") or ""
+    read_only = args.get("read_only")
+    limit = args.get("limit", 50)
+    store = _get_catalog_store()
+    if store is not None:
+        try:
+            rows = store.search(query=query, domain=domain,
+                                read_only=read_only, limit=limit)
+            if rows:
+                return [_store_spec(row) for row in rows]
+        except Exception:
+            pass
     try:
         specs = _get_gateway().search(
-            query=args.get("query") or "",
-            domain=args.get("domain") or "",
-            read_only=args.get("read_only"),
-            limit=args.get("limit", 50),
+            query=query, domain=domain, read_only=read_only, limit=limit,
         )
         return [_gateway_spec(spec) for spec in specs]
     except Exception as exc:
@@ -798,6 +874,14 @@ def _gateway_search(args):
 
 def _gateway_describe(args):
     name = args.get("name")
+    store = _get_catalog_store()
+    if store is not None:
+        try:
+            row = store.describe(name)
+            if row:
+                return _store_spec(row)
+        except Exception:
+            pass
     try:
         return _gateway_spec(_get_gateway().describe(name))
     except KeyError:
@@ -814,20 +898,25 @@ def _gateway_call(args):
     name = args.get("name")
     tool_args = args.get("args") or {}
     confirmed = bool(args.get("confirmed", False))
+    started = time.time()
     try:
         result = _get_gateway().call(name, tool_args, confirmed=confirmed)
+        _audit_call(name, "ok", started, tool_args)
         if isinstance(result, dict) and "content" in result and "isError" in result:
             return result
         return result
     except PolicyError as exc:
+        _audit_call(name, "policy_error", started, tool_args, exc.code)
         return {"error": exc.code, "message": exc.message, "hint": exc.hint}
     except KeyError:
+        _audit_call(name, "unknown_tool", started, tool_args, "unknown_tool")
         return {
             "error": "unknown_tool",
             "tool": name,
             "hint": "Use tools_search to discover available tool names.",
         }
     except Exception as exc:
+        _audit_call(name, "provider_error", started, tool_args, "tool_call_failed")
         return {
             "error": "tool_call_failed",
             "tool": name,

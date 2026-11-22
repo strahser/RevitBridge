@@ -86,6 +86,23 @@ class CatalogStore:
             )
         return len(rows)
 
+    def _attach_aliases(self, rows):
+        """Expose aliases on result rows so the cache matches the live gateway."""
+        if not rows:
+            return rows
+        canonicals = sorted({row["canonical"] for row in rows})
+        placeholders = ",".join("?" for _ in canonicals)
+        mapping = {}
+        for alias, canonical in self.db.execute(
+            "select alias, canonical from aliases where canonical in (%s)"
+            % placeholders,
+            canonicals,
+        ):
+            mapping.setdefault(canonical, []).append(alias)
+        for row in rows:
+            row["aliases"] = sorted(mapping.get(row["canonical"], []))
+        return rows
+
     def search(self, query="", domain="", read_only=None, limit=50):
         clauses = ["enabled=1"]
         params = []
@@ -104,7 +121,8 @@ class CatalogStore:
         params.append(max(0, int(limit)))
         sql = ("select * from tools where " + " and ".join(clauses) +
                " order by canonical limit ?")
-        return [dict(row) for row in self.db.execute(sql, params)]
+        rows = [dict(row) for row in self.db.execute(sql, params)]
+        return self._attach_aliases(rows)
 
     def describe(self, name):
         row = self.db.execute(
@@ -112,7 +130,10 @@ class CatalogStore:
             "where t.name=? or t.canonical=? or a.alias=? limit 1",
             (name, name, name),
         ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        rows = self._attach_aliases([dict(row)])
+        return rows[0]
 
     def record_call(self, tool_name, status, duration_ms=0, session_id="",
                     args_hash="", error_code="", started_at=None):
