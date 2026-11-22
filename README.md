@@ -79,6 +79,9 @@ $env:REVIT_BRIDGE_ALLOW_WRITES = "1"
 python mcp-server\catalog_build.py --db D:\temp\tool_catalog.db --verify
 ```
 
+Для сборки нужен запущенный Revit (WS) и доступный DwgParser: кэш отражает **живой** каталог,
+а не только файлы манифестов.
+
 `--verify` — consistency gate: DB == gateway, duplicate canonical = 0, FTS = tools.
 Если задан `MCP_CATALOG_DB`, `tools_search`/`tools_describe` читают кэш, а `tools_call` пишет
 строку в `tool_calls` (`ok` / `policy_error` / `unknown_tool` / `provider_error`).
