@@ -55,6 +55,21 @@ OpenCode --stdio--> mcp-server/server.py --WebSocket ws://127.0.0.1:17871/bridge
 сейчас возвращают `legacy_write_disabled`: HTTP POST закрыт, перенос на WS — P3/P4.
 Для записи в Revit нужен `REVIT_BRIDGE_ALLOW_WRITES=1` и write-профиль MCP.
 
+### Профили и запись
+
+```powershell
+# read-only (по умолчанию)
+$env:MCP_PROFILE = "revit-read"
+
+# write через gateway; C# всё равно требует AllowWrites
+$env:MCP_PROFILE = "revit-write"
+$env:MCP_ALLOW_WRITES = "1"
+$env:REVIT_BRIDGE_ALLOW_WRITES = "1"
+```
+
+`tools_call` для destructive-команд требует `confirmed=true`; `tools_search`
+фильтрует по `read_only`. MCP-клиент видит эти аннотации в `tools/list`.
+
 ## Единый MCP (P3)
 
 Один сервер `revit-bridge` (stdio) объединяет:
