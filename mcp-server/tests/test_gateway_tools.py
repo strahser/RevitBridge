@@ -289,6 +289,7 @@ class StaticProviderAndToolListTests(unittest.TestCase):
         self.assertIs(by_name["tools_describe"]["annotations"]["readOnlyHint"], True)
         self.assertIs(by_name["tools_call"]["annotations"]["readOnlyHint"], False)
         self.assertIs(by_name["tools_call"]["annotations"]["destructiveHint"], True)
+        self.assertIs(by_name["tools_health"]["annotations"]["readOnlyHint"], True)
         with mock.patch.object(server, "_dynamic_tools", return_value=[]), \
              mock.patch.object(server, "_child_tools", return_value=[]):
             tools = server.handle({"method": "tools/list"})["tools"]
@@ -296,7 +297,7 @@ class StaticProviderAndToolListTests(unittest.TestCase):
         for meta in server._META_TOOL_NAMES:
             with self.subTest(meta=meta):
                 self.assertIn(meta, names)
-        self.assertEqual(sum(name in server._META_TOOL_NAMES for name in names), 3)
+        self.assertEqual(sum(name in server._META_TOOL_NAMES for name in names), 4)
 
 
 if __name__ == "__main__":

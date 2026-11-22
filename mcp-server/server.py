@@ -644,9 +644,40 @@ META_TOOLS = [
         "annotations": {"readOnlyHint": False, "destructiveHint": True,
                         "idempotentHint": False, "openWorldHint": False},
     },
+    {
+        "name": "tools_health",
+        "description": "Provider health for the unified catalog (Revit WS, DwgParser, static).",
+        "inputSchema": {"type": "object", "properties": {}},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False,
+                        "idempotentHint": True, "openWorldHint": False},
+    },
 ]
 _META_TOOL_NAMES = frozenset(tool["name"] for tool in META_TOOLS)
 ALL_TOOLS = TOOLS + META_TOOLS
+
+# Direct tools advertised by tools/list in compact mode. Everything else is
+# discoverable through tools_search and callable through tools_call.
+DIRECT_TOOL_NAMES = (
+    "bridge_status",
+    "revit_doc_info",
+    "revit_open_document",
+    "tools_search",
+    "tools_describe",
+    "tools_call",
+    "tools_health",
+)
+
+
+def _tools_mode():
+    """compact (default) or full legacy list."""
+    return os.getenv("MCP_TOOLS_MODE", "compact").strip().casefold()
+
+
+def _tools_for_list():
+    if _tools_mode() == "full":
+        return ALL_TOOLS + _dynamic_tools() + _child_tools()
+    by_name = {tool["name"]: tool for tool in ALL_TOOLS}
+    return [by_name[name] for name in DIRECT_TOOL_NAMES if name in by_name]
 
 
 class StaticToolProvider:
@@ -804,6 +835,21 @@ def _gateway_call(args):
         }
 
 
+def _gateway_health(args):
+    try:
+        return [
+            {
+                "name": health.name,
+                "ok": bool(health.ok),
+                "detail": health.detail,
+                "toolCount": health.tool_count,
+            }
+            for health in _get_gateway().health()
+        ]
+    except Exception as exc:
+        return _bridge_unavailable(exc)
+
+
 # Structured failures that must reach MCP clients with isError=true.
 _MCP_ERROR_CODES = frozenset({
     "legacy_write_disabled", "bridge_unavailable", "write_blocked",
@@ -820,6 +866,8 @@ def tool_call(name, args):
             return _gateway_search(args)
         if name == "tools_describe":
             return _gateway_describe(args)
+        if name == "tools_health":
+            return _gateway_health(args)
         return _gateway_call(args)
     # Static tool policy: migrated tools go to WS, the rest of the writes are
     # rejected before any dispatch (no _api / HTTP call is attempted).
@@ -976,7 +1024,7 @@ def handle(msg):
     if method == "ping":
         return {}
     if method == "tools/list":
-        return {"tools": ALL_TOOLS + _dynamic_tools() + _child_tools()}
+        return {"tools": _tools_for_list()}
     if method == "tools/call":
         try:
             result = tool_call(params.get("name"), params.get("arguments"))

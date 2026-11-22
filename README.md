@@ -70,6 +70,10 @@ $env:REVIT_BRIDGE_ALLOW_WRITES = "1"
 `tools_call` для destructive-команд требует `confirmed=true`; `tools_search`
 фильтрует по `read_only`. MCP-клиент видит эти аннотации в `tools/list`.
 
+По умолчанию `MCP_TOOLS_MODE=compact`: в `tools/list` только 7 прямых
+инструментов + `tools_search`/`tools_describe`/`tools_call`/`tools_health`.
+Полный legacy-список (296 имён) включается `MCP_TOOLS_MODE=full`.
+
 ## Единый MCP (P3)
 
 Один сервер `revit-bridge` (stdio) объединяет:
