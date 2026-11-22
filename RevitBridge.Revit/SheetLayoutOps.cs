@@ -711,80 +711,97 @@ namespace RevitBridge
             };
         }
 
+        private sealed class CropBounds
+        {
+            public double MinX = double.MaxValue;
+            public double MinY = double.MaxValue;
+            public double MaxX = double.MinValue;
+            public double MaxY = double.MinValue;
+            public bool Found;
+
+            public void Add(BoundingBoxXYZ box)
+            {
+                if (box == null) return;
+                MinX = Math.Min(MinX, Mm(box.Min.X));
+                MinY = Math.Min(MinY, Mm(box.Min.Y));
+                MaxX = Math.Max(MaxX, Mm(box.Max.X));
+                MaxY = Math.Max(MaxY, Mm(box.Max.Y));
+                Found = true;
+            }
+        }
+
         private static Rect ComputeCrop(Document doc, View view, double cropMargin, bool includeLinked)
         {
             var level = (view as ViewPlan)?.GenLevel ?? doc.GetElement(view.LevelId) as Level;
             if (level == null) return FallbackRect(view);
 
-            var minX = double.MaxValue;
-            var minY = double.MaxValue;
-            var maxX = double.MinValue;
-            var maxY = double.MinValue;
-            var found = false;
+            var bounds = new CropBounds();
+            AddSpaceBoxes(doc, view, level, bounds, filterByLevel: true);
 
-            void AddBox(BoundingBoxXYZ box)
+            // Fallback: if the level filter did not match (space level parameters differ
+            // between templates), use the union of all host spaces.
+            if (!bounds.Found)
+                AddSpaceBoxes(doc, view, level, bounds, filterByLevel: false);
+
+            // Optionally include the linked AR floor plate for the same level.
+            if (includeLinked) AddLinkedRooms(doc, level, bounds);
+
+            AddDucts(doc, level, bounds);
+            AddTerminals(doc, level, bounds);
+
+            if (!bounds.Found) return FallbackRect(view);
+            return new Rect
             {
-                if (box == null) return;
-                minX = Math.Min(minX, Mm(box.Min.X));
-                minY = Math.Min(minY, Mm(box.Min.Y));
-                maxX = Math.Max(maxX, Mm(box.Max.X));
-                maxY = Math.Max(maxY, Mm(box.Max.Y));
-                found = true;
-            }
+                Name = view.Name,
+                X0 = bounds.MinX - cropMargin,
+                Y0 = bounds.MinY - cropMargin,
+                X1 = bounds.MaxX + cropMargin,
+                Y1 = bounds.MaxY + cropMargin,
+            };
+        }
 
+        private static BoundingBoxXYZ SpaceBox(Space space, View view)
+        {
+            var box = space.get_BoundingBox(null) ?? space.get_BoundingBox(view);
+            if (space.Location is LocationPoint location)
+            {
+                // Space bounding boxes in this template include long linked-room
+                // tails; the location point is the reliable room center for cropping.
+                box = new BoundingBoxXYZ
+                {
+                    Min = location.Point - new XYZ(Ft(2500), Ft(2500), Ft(100)),
+                    Max = location.Point + new XYZ(Ft(2500), Ft(2500), Ft(100)),
+                };
+            }
+            return box;
+        }
+
+        private static void AddSpaceBoxes(Document doc, View view, Level level,
+            CropBounds bounds, bool filterByLevel)
+        {
             foreach (var space in new FilteredElementCollector(doc)
                 .OfCategory(BuiltInCategory.OST_MEPSpaces)
                 .WhereElementIsNotElementType().Cast<Space>())
             {
-                var levelId = space.get_Parameter(BuiltInParameter.ROOM_LEVEL_ID)?.AsElementId()
-                              ?? space.get_Parameter(BuiltInParameter.LEVEL_PARAM)?.AsElementId()
-                              ?? space.LookupParameter("Уровень")?.AsElementId();
-                var onLevel = (levelId != null && levelId == level.Id) ||
-                              space.LevelId == level.Id ||
-                              string.Equals(space.Level?.Name, level.Name, StringComparison.OrdinalIgnoreCase);
-                if (!onLevel) continue;
-
-                var box = space.get_BoundingBox(null) ?? space.get_BoundingBox(view);
-                if (space.Location is LocationPoint location)
+                if (filterByLevel)
                 {
-                    // Space bounding boxes in this template include long linked-room
-                    // tails; the location point is the reliable room center for cropping.
-                    box = new BoundingBoxXYZ
-                    {
-                        Min = location.Point - new XYZ(Ft(2500), Ft(2500), Ft(100)),
-                        Max = location.Point + new XYZ(Ft(2500), Ft(2500), Ft(100)),
-                    };
+                    var levelId = space.get_Parameter(BuiltInParameter.ROOM_LEVEL_ID)?.AsElementId()
+                                  ?? space.get_Parameter(BuiltInParameter.LEVEL_PARAM)?.AsElementId()
+                                  ?? space.LookupParameter("Уровень")?.AsElementId();
+                    var onLevel = (levelId != null && levelId == level.Id) ||
+                                  space.LevelId == level.Id ||
+                                  string.Equals(space.Level?.Name, level.Name, StringComparison.OrdinalIgnoreCase);
+                    if (!onLevel) continue;
                 }
-                AddBox(box);
+                bounds.Add(SpaceBox(space, view));
             }
+        }
 
-            // Fallback: if the level filter did not match (space level parameters differ
-            // between templates), use the union of all host spaces.
-            if (!found)
+        private static void AddLinkedRooms(Document doc, Level level, CropBounds bounds)
+        {
+            foreach (var link in new FilteredElementCollector(doc)
+                .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
             {
-                foreach (var space in new FilteredElementCollector(doc)
-                    .OfCategory(BuiltInCategory.OST_MEPSpaces)
-                    .WhereElementIsNotElementType().Cast<Space>())
-                {
-                    var box = space.get_BoundingBox(null) ?? space.get_BoundingBox(view);
-                    if (space.Location is LocationPoint location)
-                    {
-                        box = new BoundingBoxXYZ
-                        {
-                            Min = location.Point - new XYZ(Ft(2500), Ft(2500), Ft(100)),
-                            Max = location.Point + new XYZ(Ft(2500), Ft(2500), Ft(100)),
-                        };
-                    }
-                    AddBox(box);
-                }
-            }
-
-            // Optionally include the linked AR floor plate for the same level.
-            if (includeLinked)
-            {
-                foreach (var link in new FilteredElementCollector(doc)
-                    .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
-                {
                 var linkDoc = link.GetLinkDocument();
                 if (linkDoc == null) continue;
                 var transform = link.GetTotalTransform();
@@ -809,40 +826,35 @@ namespace RevitBridge
                         new XYZ(box.Max.X, box.Max.Y, box.Max.Z),
                     }.Select(p => transform.OfPoint(p)).ToList();
 
-                    AddBox(new BoundingBoxXYZ
+                    bounds.Add(new BoundingBoxXYZ
                     {
                         Min = new XYZ(corners.Min(p => p.X), corners.Min(p => p.Y), corners.Min(p => p.Z)),
                         Max = new XYZ(corners.Max(p => p.X), corners.Max(p => p.Y), corners.Max(p => p.Z)),
                     });
                 }
-                }
             }
+        }
 
+        private static void AddDucts(Document doc, Level level, CropBounds bounds)
+        {
             foreach (var duct in new FilteredElementCollector(doc)
                 .OfCategory(BuiltInCategory.OST_DuctCurves)
                 .WhereElementIsNotElementType().Cast<Duct>()
                 .Where(d => d.LevelId == level.Id))
             {
-                AddBox(duct.get_BoundingBox(null));
+                bounds.Add(duct.get_BoundingBox(null));
             }
+        }
 
+        private static void AddTerminals(Document doc, Level level, CropBounds bounds)
+        {
             foreach (var terminal in new FilteredElementCollector(doc)
                 .OfCategory(BuiltInCategory.OST_DuctTerminal)
                 .WhereElementIsNotElementType().Cast<FamilyInstance>()
                 .Where(t => t.LevelId == level.Id))
             {
-                AddBox(terminal.get_BoundingBox(null));
+                bounds.Add(terminal.get_BoundingBox(null));
             }
-
-            if (!found) return FallbackRect(view);
-            return new Rect
-            {
-                Name = view.Name,
-                X0 = minX - cropMargin,
-                Y0 = minY - cropMargin,
-                X1 = maxX + cropMargin,
-                Y1 = maxY + cropMargin,
-            };
         }
 
         private static Rect FallbackRect(View view)
