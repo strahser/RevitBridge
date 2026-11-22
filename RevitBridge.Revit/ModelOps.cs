@@ -15,9 +15,35 @@ namespace RevitBridge
         public static object ClearModel(UIApplication app, JObject args)
         {
             var doc = BridgeOps.Doc(app);
-            var uidoc = app.ActiveUIDocument;
-            int links = 0, spaces = 0, model = 0, views = 0, viewports = 0;
+            ActivateSafeView(doc, app.ActiveUIDocument);
 
+            // Delete viewports first: a viewport cannot survive its view.
+            var viewportIds = new FilteredElementCollector(doc).OfClass(typeof(Viewport))
+                .Cast<Viewport>().Select(v => v.Id).ToList();
+            var viewports = DeleteIds(doc, viewportIds, "Bridge Clear Viewports");
+
+            var viewIds = new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>()
+                .Where(v => !v.IsTemplate && !(v is ViewSheet) &&
+                            (v.ViewType == ViewType.FloorPlan || v.ViewType == ViewType.CeilingPlan))
+                .Select(v => v.Id).ToList();
+            var views = DeleteIds(doc, viewIds, "Bridge Clear Views");
+
+            var linkIds = new FilteredElementCollector(doc).OfClass(typeof(RevitLinkInstance))
+                .Cast<RevitLinkInstance>().Select(l => l.Id).ToList();
+            var links = DeleteIds(doc, linkIds, "Bridge Clear Links");
+
+            var modelIds = CollectModelElements(doc, out var spaces, out var model);
+            DeleteIds(doc, modelIds, "Bridge Clear Model Elements");
+
+            return new Dictionary<string, object>
+            {
+                { "links", links }, { "spaces", spaces }, { "model", model },
+                { "views", views }, { "viewports", viewports },
+            };
+        }
+
+        private static void ActivateSafeView(Document doc, UIDocument uidoc)
+        {
             // The active view may be one of the floor plans we are about to delete.
             try
             {
@@ -28,55 +54,29 @@ namespace RevitBridge
                 if (safe != null && uidoc != null) uidoc.ActiveView = safe;
             }
             catch (Exception) { }
+        }
 
-            // Delete viewports first: a viewport cannot survive its view.
-            var viewportIds = new FilteredElementCollector(doc).OfClass(typeof(Viewport))
-                .Cast<Viewport>().Select(v => v.Id).ToList();
-            if (viewportIds.Count > 0)
+        private static int DeleteIds(Document doc, List<ElementId> ids, string transactionName)
+        {
+            if (ids.Count == 0) return 0;
+            var deleted = 0;
+            using (var tx = new Transaction(doc, transactionName))
             {
-                using (var tx = new Transaction(doc, "Bridge Clear Viewports"))
+                tx.Start();
+                foreach (var id in ids)
                 {
-                    tx.Start();
-                    foreach (var id in viewportIds)
-                    {
-                        try { doc.Delete(id); viewports++; } catch (Exception) { }
-                    }
-                    tx.Commit();
+                    try { doc.Delete(id); deleted++; } catch (Exception) { }
                 }
+                tx.Commit();
             }
+            return deleted;
+        }
 
-            var viewIds = new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>()
-                .Where(v => !v.IsTemplate && !(v is ViewSheet) &&
-                            (v.ViewType == ViewType.FloorPlan || v.ViewType == ViewType.CeilingPlan))
-                .Select(v => v.Id).ToList();
-            if (viewIds.Count > 0)
-            {
-                using (var tx = new Transaction(doc, "Bridge Clear Views"))
-                {
-                    tx.Start();
-                    foreach (var id in viewIds)
-                    {
-                        try { doc.Delete(id); views++; } catch (Exception) { }
-                    }
-                    tx.Commit();
-                }
-            }
-
-            var linkIds = new FilteredElementCollector(doc).OfClass(typeof(RevitLinkInstance))
-                .Cast<RevitLinkInstance>().Select(l => l.Id).ToList();
-            if (linkIds.Count > 0)
-            {
-                using (var tx = new Transaction(doc, "Bridge Clear Links"))
-                {
-                    tx.Start();
-                    foreach (var id in linkIds)
-                    {
-                        try { doc.Delete(id); links++; } catch (Exception) { }
-                    }
-                    tx.Commit();
-                }
-            }
-
+        private static List<ElementId> CollectModelElements(Document doc,
+            out int spaces, out int model)
+        {
+            spaces = 0;
+            model = 0;
             var modelIds = new List<ElementId>();
             foreach (var element in new FilteredElementCollector(doc).WhereElementIsNotElementType().ToElements())
             {
@@ -89,25 +89,7 @@ namespace RevitBridge
                 else model++;
                 modelIds.Add(element.Id);
             }
-
-            if (modelIds.Count > 0)
-            {
-                using (var tx = new Transaction(doc, "Bridge Clear Model Elements"))
-                {
-                    tx.Start();
-                    foreach (var id in modelIds)
-                    {
-                        try { doc.Delete(id); } catch (Exception) { }
-                    }
-                    tx.Commit();
-                }
-            }
-
-            return new Dictionary<string, object>
-            {
-                { "links", links }, { "spaces", spaces }, { "model", model },
-                { "views", views }, { "viewports", viewports },
-            };
+            return modelIds;
         }
 
         public static object LinkRevit(UIApplication app, JObject args)
