@@ -7,6 +7,7 @@ using Autodesk.Revit.DB.Architecture;
 using Autodesk.Revit.DB.Mechanical;
 using Autodesk.Revit.UI;
 using Newtonsoft.Json.Linq;
+using RevitBridge.Core;
 
 namespace RevitBridge
 {
@@ -179,7 +180,7 @@ namespace RevitBridge
             var originY = Mm(tbBox.Min.Y);
             var sheetW = Mm(tbBox.Max.X - tbBox.Min.X);
             var sheetH = Mm(tbBox.Max.Y - tbBox.Min.Y);
-            var format = SheetLayoutFormat(sheetW, sheetH, titleBlock.Name);
+            var format = SheetLayoutMath.SheetLayoutFormat(sheetW, sheetH, titleBlock.Name);
             var tbType = doc.GetElement(titleBlock.GetTypeId()) as ElementType;
             var tbFamily = tbType?.FamilyName ?? "";
             var generated = titleBlock.Name.StartsWith("NB_", StringComparison.OrdinalIgnoreCase) ||
@@ -826,17 +827,6 @@ namespace RevitBridge
             return new Rect { X0 = values[0], Y0 = values[1], X1 = values[2], Y1 = values[3] };
         }
 
-        private static string SheetLayoutFormat(double w, double h, string name)
-        {
-            var longSide = Math.Max(w, h);
-            var shortSide = Math.Min(w, h);
-            if (Math.Abs(longSide - 841) < 8 && Math.Abs(shortSide - 594) < 8) return "A1";
-            if (Math.Abs(longSide - 594) < 8 && Math.Abs(shortSide - 420) < 8) return "A2";
-            if (Math.Abs(longSide - 420) < 8 && Math.Abs(shortSide - 297) < 8) return "A3";
-            if (Math.Abs(longSide - 297) < 8 && Math.Abs(shortSide - 210) < 8) return "A4";
-            return "custom:" + name;
-        }
-
         private static Rect DefaultSafeBox(string format, string titleBlockName)
         {
             if (string.Equals(titleBlockName, "NB_A4", StringComparison.OrdinalIgnoreCase) ||
@@ -1036,47 +1026,26 @@ namespace RevitBridge
 
         private static List<double[]> PlanPositions(List<Item> items, Rect usable, double gap)
         {
-            double x = usable.X0, y = usable.Y1, shelf = 0;
-            var result = new List<double[]>();
-            foreach (var item in items)
+            var mathItems = items.Select(item => new SheetLayoutMath.LayoutItem
             {
-                var w = item.W > 0 ? item.W : item.EstW;
-                var h = item.H > 0 ? item.H : item.EstH;
-                double px, py;
-                if (item.ReqX.HasValue && item.ReqY.HasValue)
+                W = item.W,
+                H = item.H,
+                EstW = item.EstW,
+                EstH = item.EstH,
+                ReqX = item.ReqX,
+                ReqY = item.ReqY,
+            }).ToList();
+            var points = SheetLayoutMath.PlanPositions(
+                mathItems,
+                new SheetLayoutMath.Rect
                 {
-                    px = item.ReqX.Value;
-                    py = item.ReqY.Value;
-                }
-                else if (item.ReqX.HasValue)
-                {
-                    px = item.ReqX.Value;
-                    py = y;
-                    shelf = Math.Max(shelf, h);
-                }
-                else if (item.ReqY.HasValue)
-                {
-                    px = x;
-                    py = item.ReqY.Value;
-                    x += w + gap;
-                    shelf = Math.Max(shelf, h);
-                }
-                else
-                {
-                    if (x + w > usable.X1 && x > usable.X0)
-                    {
-                        x = usable.X0;
-                        y -= shelf + gap;
-                        shelf = 0;
-                    }
-                    px = x;
-                    py = y;
-                    x += w + gap;
-                    shelf = Math.Max(shelf, h);
-                }
-                result.Add(new[] { px, py });
-            }
-            return result;
+                    X0 = usable.X0,
+                    Y0 = usable.Y0,
+                    X1 = usable.X1,
+                    Y1 = usable.Y1,
+                },
+                gap);
+            return points.Select(p => new[] { p.X, p.Y }).ToList();
         }
 
         private static void ApplyPositions(List<Item> items, List<double[]> positions)

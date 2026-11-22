@@ -6,6 +6,7 @@ using Autodesk.Revit.DB.Architecture;
 using Autodesk.Revit.DB.Mechanical;
 using Autodesk.Revit.UI;
 using Newtonsoft.Json.Linq;
+using RevitBridge.Core;
 
 namespace RevitBridge
 {
@@ -528,21 +529,10 @@ namespace RevitBridge
                     { "name", f.Name },
                     { "widthMm", f.W },
                     { "heightMm", f.H },
-                    { "format", FormatName(f.W, f.H) },
+                    { "format", SheetLayoutMath.FormatName(f.W, f.H) },
                 })
                 .ToList();
             return new Dictionary<string, object> { { "count", items.Count }, { "items", items } };
-        }
-
-        private static string FormatName(double w, double h)
-        {
-            var longSide = Math.Max(w, h);
-            var shortSide = Math.Min(w, h);
-            if (Math.Abs(longSide - 841) < 5 && Math.Abs(shortSide - 594) < 5) return "A1";
-            if (Math.Abs(longSide - 594) < 5 && Math.Abs(shortSide - 420) < 5) return "A2";
-            if (Math.Abs(longSide - 420) < 5 && Math.Abs(shortSide - 297) < 5) return "A3";
-            if (Math.Abs(longSide - 297) < 5 && Math.Abs(shortSide - 210) < 5) return "A4";
-            return "custom";
         }
 
         private static List<TitleBlockInfo> MeasureTitleBlocks(Document doc)
@@ -603,7 +593,7 @@ namespace RevitBridge
             out bool fits)
         {
             var unique = formats
-                .Where(f => allowCustom || FormatName(f.W, f.H) != "custom")
+                .Where(f => allowCustom || SheetLayoutMath.FormatName(f.W, f.H) != "custom")
                 .GroupBy(f => f.FamilyName + "|" + f.Name + "|"
                               + Math.Round(f.W) + "x" + Math.Round(f.H))
                 .Select(g => g.First())
@@ -625,11 +615,15 @@ namespace RevitBridge
 
                 var scale = requestedScale > 0
                     ? requestedScale
-                    : RequiredScale(crops, planW, usableH);
+                    : SheetLayoutMath.RequiredScale(
+                        crops.Values.Select(r => new SheetLayoutMath.Box(r.W, r.H)),
+                        planW, usableH);
                 var viewItems = crops.Values
                     .Select(r => new Placement { W = r.W / scale + 8, H = r.H / scale + 8 })
                     .OrderByDescending(i => i.H).ToList();
-                if (!ShelfFits(viewItems, planW, usableH, gap)) continue;
+                if (!SheetLayoutMath.ShelfFits(
+                        viewItems.Select(i => new SheetLayoutMath.Box(i.W, i.H)).ToList(),
+                        planW, usableH, gap)) continue;
 
                 var scheduleHeight = estimates.Sum(e => e.H + gap);
                 if (scheduleHeight > usableH + gap) continue;
@@ -639,39 +633,6 @@ namespace RevitBridge
             }
 
             return unique.Last();
-        }
-
-        private static int RequiredScale(Dictionary<long, Rect> crops, double planW, double planH)
-        {
-            var required = 1.0;
-            foreach (var rect in crops.Values)
-            {
-                required = Math.Max(required, Math.Max(rect.W / planW, rect.H / planH));
-            }
-            var standardScales = new[] { 50, 100, 150, 200, 250, 300, 400, 500 };
-            foreach (var scale in standardScales)
-            {
-                if (scale >= required) return scale;
-            }
-            return standardScales.Last();
-        }
-
-        private static bool ShelfFits(List<Placement> items, double width, double height, double gap)
-        {
-            double x = 0, y = height, shelf = 0;
-            foreach (var item in items)
-            {
-                if (x + item.W > width && x > 0)
-                {
-                    x = 0;
-                    y -= shelf + gap;
-                    shelf = 0;
-                }
-                if (y - item.H < -0.5) return false;
-                x += item.W + gap;
-                shelf = Math.Max(shelf, item.H);
-            }
-            return true;
         }
 
         public static object DebugSpaces(UIApplication app, JObject args)
