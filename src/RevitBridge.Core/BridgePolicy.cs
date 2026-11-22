@@ -56,7 +56,10 @@ namespace RevitBridge.Core
                 };
             }
 
-            if (!AllowWrites && string.Equals(descriptor.Transaction, "write", StringComparison.OrdinalIgnoreCase))
+            var writesDocument = descriptor.Safety != null
+                ? descriptor.Safety.WritesDocument
+                : string.Equals(descriptor.Transaction, "write", StringComparison.OrdinalIgnoreCase);
+            if (!AllowWrites && writesDocument)
             {
                 return new BridgeError
                 {

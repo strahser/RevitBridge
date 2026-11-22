@@ -47,6 +47,22 @@ public class PolicyTests
     }
 
     [Test]
+    public async Task ReadOnly_Allows_Write_Command_That_Does_Not_Write_Document()
+    {
+        var policy = new BridgePolicy();
+        var descriptor = Descriptor("pipeline.export_sheet_pdf", BridgeTransaction.Write);
+        descriptor.Safety = new CommandSafety
+        {
+            ReadOnly = false,
+            WritesDocument = false,
+        };
+
+        var error = policy.CheckCall(descriptor);
+
+        await Assert.That(error).IsNull();
+    }
+
+    [Test]
     public async Task Denied_Command_Stays_Forbidden_Even_With_Writes()
     {
         var policy = new BridgePolicy { AllowWrites = true };

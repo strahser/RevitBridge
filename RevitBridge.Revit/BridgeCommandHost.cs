@@ -121,6 +121,15 @@ namespace RevitBridge
                     var detach = args?.Value<bool?>("detach") ?? false;
                     var audit = args?.Value<bool?>("audit") ?? false;
                     return _handler.Run(app => McpOps.Open(app, path, detach, audit), 600000);
+                }, new CommandSafety
+                {
+                    ReadOnly = false,
+                    WritesDocument = false,
+                    Destructive = false,
+                    RequiresConfirmation = false,
+                    BackupRequired = false,
+                    Idempotent = false,
+                    OpenWorld = false,
                 });
 
             Register("revit.close_document", "Close the active document", BridgeTransaction.Write,
@@ -163,10 +172,12 @@ namespace RevitBridge
                 args => _handler.Run(app => ExtendedOps.FilterElements(app, args as JObject ?? new JObject()), 60000));
             Register("revit.operate_element", "Select/color/hide/isolate elements", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\"},\"ids\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}},\"color\":{\"type\":\"string\"}},\"required\":[\"action\",\"ids\"]}"),
-                args => _handler.Run(app => ExtendedOps.OperateElement(app, args as JObject ?? new JObject()), 60000));
+                args => _handler.Run(app => ExtendedOps.OperateElement(app, args as JObject ?? new JObject()), 60000),
+                ViewOnlySafety());
             Register("revit.color_splash", "Color elements by a parameter value", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"parameterName\":{\"type\":\"string\"}},\"required\":[\"parameterName\"]}"),
-                args => _handler.Run(app => ExtendedOps.ColorSplash(app, args as JObject ?? new JObject()), 120000));
+                args => _handler.Run(app => ExtendedOps.ColorSplash(app, args as JObject ?? new JObject()), 120000),
+                ViewOnlySafety());
             Register("revit.create_dimensions", "Create a linear dimension between two elements", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"elementId1\":{\"type\":\"integer\"},\"elementId2\":{\"type\":\"integer\"},\"offsetMm\":{\"type\":\"number\"}},\"required\":[\"elementId1\",\"elementId2\"]}"),
                 args => _handler.Run(app => ExtendedOps.CreateDimensions(app, args as JObject ?? new JObject()), 60000));
@@ -268,7 +279,8 @@ namespace RevitBridge
                 args => _handler.Run(app => SheetLayoutOps.CreateLevelExplication(app, args as JObject ?? new JObject()), 120000));
             Register("pipeline.export_sheet_pdf", "Export a sheet to PDF", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"path\":{\"type\":\"string\"}},\"required\":[\"sheetId\",\"path\"]}"),
-                args => _handler.Run(app => PipelineOps.ExportSheetPdf(app, args as JObject ?? new JObject()), 300000));
+                args => _handler.Run(app => PipelineOps.ExportSheetPdf(app, args as JObject ?? new JObject()), 300000),
+                FileExportSafety());
         }
 
         private void LoadManifests()
@@ -368,6 +380,34 @@ namespace RevitBridge
             {
                 Environment.SetEnvironmentVariable("REVIT_BRIDGE_SUPPRESS_UI", previous);
             }
+        }
+
+        private static CommandSafety ViewOnlySafety()
+        {
+            return new CommandSafety
+            {
+                ReadOnly = false,
+                WritesDocument = false,
+                Destructive = false,
+                RequiresConfirmation = false,
+                BackupRequired = false,
+                Idempotent = false,
+                OpenWorld = false,
+            };
+        }
+
+        private static CommandSafety FileExportSafety()
+        {
+            return new CommandSafety
+            {
+                ReadOnly = false,
+                WritesDocument = false,
+                Destructive = false,
+                RequiresConfirmation = false,
+                BackupRequired = false,
+                Idempotent = true,
+                OpenWorld = false,
+            };
         }
 
         private void Register(string name, string description, BridgeTransaction transaction, JToken argsSchema,
