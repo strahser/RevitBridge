@@ -246,6 +246,9 @@ namespace RevitBridge
                 args => _handler.Run(app => SheetComposeOps.ComposeSheet(app, args as JObject ?? new JObject()), 600000));
             Register("pipeline.list_title_blocks", "Measure title block formats (A4/A3/A2/A1) from the template", BridgeTransaction.Read, null,
                 args => _handler.Run(app => SheetLayoutOps.ListTitleBlocks(app, args as JObject ?? new JObject()), 120000));
+            Register("pipeline.collect_spec", "Collect OV elements for specification: systems, types, sizes, lengths, diagnostics", BridgeTransaction.Read,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"categories\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"levelIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"}},\"systemNames\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"includeUnassigned\":{\"type\":\"boolean\"},\"resultFile\":{\"type\":\"string\"}}}"),
+                args => _handler.Run(app => SpecOps.Collect(app, args as JObject ?? new JObject()), 300000));
             Register("pipeline.debug_spaces", "Debug space level ids, bounding boxes and locations", BridgeTransaction.Read, null,
                 args => _handler.Run(app => SheetLayoutOps.DebugSpaces(app, args as JObject ?? new JObject()), 60000));
             Register("pipeline.create_level_explication", "Duplicate the room explication schedule and filter it by level", BridgeTransaction.Write,
