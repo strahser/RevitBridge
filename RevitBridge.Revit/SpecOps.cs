@@ -41,17 +41,38 @@ namespace RevitBridge
         private static double Mm(double feet) => feet * MmPerFoot;
         private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 
-        public static object Collect(UIApplication app, JObject args)
+        private sealed class SpecFilters
         {
-            var doc = Doc(app);
-            var categories = args?["categories"]?.ToObject<string[]>() ?? DefaultCategories;
-            var levelIds = args?["levelIds"]?.ToObject<long[]>() ?? Array.Empty<long>();
-            var systemNames = args?["systemNames"]?.ToObject<string[]>() ?? Array.Empty<string>();
-            var includeUnassigned = args?.Value<bool?>("includeUnassigned") ?? true;
+            public string[] Categories;
+            public long[] LevelIds;
+            public string[] SystemNames;
+            public bool IncludeUnassigned;
 
+            public static SpecFilters Parse(JObject args) => new SpecFilters
+            {
+                Categories = args?["categories"]?.ToObject<string[]>() ?? DefaultCategories,
+                LevelIds = args?["levelIds"]?.ToObject<long[]>() ?? Array.Empty<long>(),
+                SystemNames = args?["systemNames"]?.ToObject<string[]>() ?? Array.Empty<string>(),
+                IncludeUnassigned = args?.Value<bool?>("includeUnassigned") ?? true,
+            };
+        }
+
+        private sealed class SpecDiagnostics
+        {
+            public List<Dictionary<string, object>> Rows = new();
+            public List<Dictionary<string, object>> Unassigned = new();
+            public List<Dictionary<string, object>> MissingSize = new();
+            public List<Dictionary<string, object>> MissingMark = new();
+            public List<Dictionary<string, object>> MissingUnit = new();
+            public List<Dictionary<string, object>> Excluded = new();
+            public Dictionary<string, int> SystemCounts = new(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static List<Element> CollectElements(Document doc, SpecFilters filters)
+        {
             var elements = new List<Element>();
             var seen = new HashSet<long>();
-            foreach (var categoryName in categories)
+            foreach (var categoryName in filters.Categories)
             {
                 if (!Enum.TryParse(categoryName, true, out BuiltInCategory category)) continue;
                 try
@@ -65,9 +86,9 @@ namespace RevitBridge
                 catch (Exception) { }
             }
 
-            if (levelIds.Length > 0)
+            if (filters.LevelIds.Length > 0)
             {
-                var allowed = new HashSet<long>(levelIds);
+                var allowed = new HashSet<long>(filters.LevelIds);
                 elements = elements.Where(e =>
                 {
                     try { return allowed.Contains(e.LevelId.Value); }
@@ -75,80 +96,79 @@ namespace RevitBridge
                 }).ToList();
             }
 
-            var rows = new List<Dictionary<string, object>>();
-            var unassigned = new List<Dictionary<string, object>>();
-            var missingSize = new List<Dictionary<string, object>>();
-            var missingMark = new List<Dictionary<string, object>>();
-            var missingUnit = new List<Dictionary<string, object>>();
-            var excluded = new List<Dictionary<string, object>>();
-            var systemCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            return elements;
+        }
 
-            foreach (var element in elements.OrderBy(e => e.Id.Value))
+        private static void AddSpecRow(Document doc, Element element, SpecFilters filters, SpecDiagnostics diagnostics)
+        {
+            try
             {
-                try
+                var row = Describe(doc, element);
+                if (row.TryGetValue("exclude", out var excludeValue) && excludeValue is bool excludedFlag && excludedFlag)
+                    diagnostics.Excluded.Add(Brief(row));
+                var system = (string)row["systemName"];
+                if (string.IsNullOrWhiteSpace(system))
                 {
-                    var row = Describe(doc, element);
-                    if (row.TryGetValue("exclude", out var excludeValue) && excludeValue is bool excludedFlag && excludedFlag)
-                        excluded.Add(Brief(row));
-                    var system = (string)row["systemName"];
-                    if (string.IsNullOrWhiteSpace(system))
-                    {
-                        unassigned.Add(Brief(row));
-                        if (!includeUnassigned) continue;
-                    }
-                    else
-                    {
-                        systemCounts[system] = systemCounts.TryGetValue(system, out var n) ? n + 1 : 1;
-                        if (systemNames.Length > 0 &&
-                            !systemNames.Any(s => SameSystem(s, system)))
-                            continue;
-                    }
-
-                    if ((string)row["sizeText"] == "" &&
-                        (double)row["diameterMm"] <= 0 &&
-                        (double)row["widthMm"] <= 0 &&
-                        (double)row["heightMm"] <= 0)
-                        missingSize.Add(Brief(row));
-                    if (string.IsNullOrWhiteSpace((string)row["mark"]))
-                        missingMark.Add(Brief(row));
-                    if (string.IsNullOrWhiteSpace((string)row["unit"]))
-                        missingUnit.Add(Brief(row));
-
-                    rows.Add(row);
+                    diagnostics.Unassigned.Add(Brief(row));
+                    if (!filters.IncludeUnassigned) return;
                 }
-                catch (Exception ex)
+                else
                 {
-                    unassigned.Add(new Dictionary<string, object>
-                    {
-                        { "sourceId", element.Id.Value },
-                        { "category", element.Category?.Name ?? "" },
-                        { "error", ex.Message },
-                    });
+                    diagnostics.SystemCounts[system] = diagnostics.SystemCounts.TryGetValue(system, out var n) ? n + 1 : 1;
+                    if (filters.SystemNames.Length > 0 &&
+                        !filters.SystemNames.Any(s => SameSystem(s, system)))
+                        return;
                 }
+
+                if ((string)row["sizeText"] == "" &&
+                    (double)row["diameterMm"] <= 0 &&
+                    (double)row["widthMm"] <= 0 &&
+                    (double)row["heightMm"] <= 0)
+                    diagnostics.MissingSize.Add(Brief(row));
+                if (string.IsNullOrWhiteSpace((string)row["mark"]))
+                    diagnostics.MissingMark.Add(Brief(row));
+                if (string.IsNullOrWhiteSpace((string)row["unit"]))
+                    diagnostics.MissingUnit.Add(Brief(row));
+
+                diagnostics.Rows.Add(row);
             }
-
-            var payload = new Dictionary<string, object>
+            catch (Exception ex)
             {
-                { "count", rows.Count },
-                { "elements", rows },
+                diagnostics.Unassigned.Add(new Dictionary<string, object>
+                {
+                    { "sourceId", element.Id.Value },
+                    { "category", element.Category?.Name ?? "" },
+                    { "error", ex.Message },
+                });
+            }
+        }
+
+        private static Dictionary<string, object> BuildPayload(SpecDiagnostics diagnostics, int targetCount)
+        {
+            return new Dictionary<string, object>
+            {
+                { "count", diagnostics.Rows.Count },
+                { "elements", diagnostics.Rows },
                 { "diagnostics", new Dictionary<string, object>
                     {
-                        { "targetCount", elements.Count },
-                        { "assignedCount", elements.Count - unassigned.Count },
-                        { "unassignedCount", unassigned.Count },
-                        { "unassigned", unassigned },
-                        { "missingSize", missingSize },
-                        { "missingMark", missingMark },
-                        { "missingUnit", missingUnit },
-                        { "excludedCount", excluded.Count },
-                        { "excluded", excluded },
-                        { "systemCounts", systemCounts.Select(kv => new Dictionary<string, object>
+                        { "targetCount", targetCount },
+                        { "assignedCount", targetCount - diagnostics.Unassigned.Count },
+                        { "unassignedCount", diagnostics.Unassigned.Count },
+                        { "unassigned", diagnostics.Unassigned },
+                        { "missingSize", diagnostics.MissingSize },
+                        { "missingMark", diagnostics.MissingMark },
+                        { "missingUnit", diagnostics.MissingUnit },
+                        { "excludedCount", diagnostics.Excluded.Count },
+                        { "excluded", diagnostics.Excluded },
+                        { "systemCounts", diagnostics.SystemCounts.Select(kv => new Dictionary<string, object>
                             { { "system", kv.Key }, { "count", kv.Value } }).ToList() },
                     }
                 },
             };
+        }
 
-            var resultFile = args?.Value<string>("resultFile");
+        private static void WriteResultFile(Dictionary<string, object> payload, string resultFile)
+        {
             if (!string.IsNullOrWhiteSpace(resultFile))
             {
                 try
@@ -159,8 +179,66 @@ namespace RevitBridge
                 }
                 catch (Exception) { }
             }
+        }
 
+        public static object Collect(UIApplication app, JObject args)
+        {
+            var doc = Doc(app);
+            var filters = SpecFilters.Parse(args);
+            var elements = CollectElements(doc, filters);
+            var diagnostics = new SpecDiagnostics();
+            foreach (var element in elements.OrderBy(e => e.Id.Value))
+                AddSpecRow(doc, element, filters, diagnostics);
+            var payload = BuildPayload(diagnostics, elements.Count);
+            WriteResultFile(payload, args?.Value<string>("resultFile"));
             return payload;
+        }
+
+        private static string ResolveName(ElementType type, string family, string typeName, string sizeText)
+        {
+            var name = TypeString(type, "ADSK_Наименование");
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                var descriptor = TypeString(type, "Комментарии к типоразмеру");
+                if (string.IsNullOrWhiteSpace(descriptor)) descriptor = family;
+                if (string.IsNullOrWhiteSpace(descriptor)) descriptor = typeName;
+                name = descriptor;
+                if (!string.IsNullOrWhiteSpace(sizeText)) name += " " + sizeText;
+            }
+            return name;
+        }
+
+        private static void ReadCurveLength(Element element, out double lengthM, out double curveLengthM, out double lengthDeltaMm)
+        {
+            lengthM = 0.0;
+            curveLengthM = 0.0;
+            lengthDeltaMm = 0.0;
+            if (element is MEPCurve curve)
+            {
+                lengthM = ParamFeet(curve, BuiltInParameter.CURVE_ELEM_LENGTH) * 0.3048;
+                try
+                {
+                    if ((curve.Location as LocationCurve)?.Curve != null)
+                    {
+                        curveLengthM = curve.Location as LocationCurve != null
+                            ? ((LocationCurve)curve.Location).Curve.Length * 0.3048
+                            : 0.0;
+                        lengthDeltaMm = Math.Abs(lengthM - curveLengthM) * 1000.0;
+                    }
+                }
+                catch (Exception) { }
+            }
+        }
+
+        private static List<string> BuildWarnings(string system, double diameter, double width, double height, string sizeText, string mark, double lengthDeltaMm)
+        {
+            var warnings = new List<string>();
+            if (string.IsNullOrWhiteSpace(system)) warnings.Add("no_system");
+            if (diameter <= 0 && width <= 0 && height <= 0 && string.IsNullOrWhiteSpace(sizeText))
+                warnings.Add("no_size");
+            if (string.IsNullOrWhiteSpace(mark)) warnings.Add("no_mark");
+            if (lengthDeltaMm > 1.0) warnings.Add("length_delta");
+            return warnings;
         }
 
         private static Dictionary<string, object> Describe(Document doc, Element element)
@@ -177,15 +255,7 @@ namespace RevitBridge
             var system = SystemNameOf(element);
             var mark = TypeString(type, "ADSK_Марка");
             if (string.IsNullOrWhiteSpace(mark)) mark = ParamString(element, "ADSK_Марка");
-            var name = TypeString(type, "ADSK_Наименование");
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                var descriptor = TypeString(type, "Комментарии к типоразмеру");
-                if (string.IsNullOrWhiteSpace(descriptor)) descriptor = family;
-                if (string.IsNullOrWhiteSpace(descriptor)) descriptor = typeName;
-                name = descriptor;
-                if (!string.IsNullOrWhiteSpace(sizeText)) name += " " + sizeText;
-            }
+            var name = ResolveName(type, family, typeName, sizeText);
             var exclude = name.IndexOf("!Не учитывать", StringComparison.OrdinalIgnoreCase) >= 0 ||
                           typeName.IndexOf("!Не учитывать", StringComparison.OrdinalIgnoreCase) >= 0;
             var unit = TypeString(type, "ADSK_Единица измерения");
@@ -196,31 +266,9 @@ namespace RevitBridge
             var manufacturer = TypeString(type, "ADSK_Завод-изготовитель");
             if (string.IsNullOrWhiteSpace(manufacturer)) manufacturer = ParamString(element, "ADSK_Завод-изготовитель");
 
-            var lengthM = 0.0;
-            var curveLengthM = 0.0;
-            var lengthDeltaMm = 0.0;
-            if (element is MEPCurve curve)
-            {
-                lengthM = ParamFeet(curve, BuiltInParameter.CURVE_ELEM_LENGTH) * 0.3048;
-                try
-                {
-                    if ((curve.Location as LocationCurve)?.Curve != null)
-                    {
-                        curveLengthM = curve.Location as LocationCurve != null
-                            ? ((LocationCurve)curve.Location).Curve.Length * 0.3048
-                            : 0.0;
-                        lengthDeltaMm = Math.Abs(lengthM - curveLengthM) * 1000.0;
-                    }
-                }
-                catch (Exception) { }
-            }
+            ReadCurveLength(element, out var lengthM, out var curveLengthM, out var lengthDeltaMm);
 
-            var warnings = new List<string>();
-            if (string.IsNullOrWhiteSpace(system)) warnings.Add("no_system");
-            if (diameter <= 0 && width <= 0 && height <= 0 && string.IsNullOrWhiteSpace(sizeText))
-                warnings.Add("no_size");
-            if (string.IsNullOrWhiteSpace(mark)) warnings.Add("no_mark");
-            if (lengthDeltaMm > 1.0) warnings.Add("length_delta");
+            var warnings = BuildWarnings(system, diameter, width, height, sizeText, mark, lengthDeltaMm);
 
             return new Dictionary<string, object>
             {
