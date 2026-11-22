@@ -56,27 +56,101 @@ namespace RevitBridge
             public double H => Y1 - Y0;
         }
 
+        private sealed class LayoutOptions
+        {
+            public double Margin;
+            public double Gap;
+            public double BottomReserve;
+            public double CropMargin;
+            public bool CropIncludeLinked;
+            public bool ClearSheet;
+            public int RequestedScale;
+            public long[] ViewIds;
+            public long[] ScheduleIds;
+            public long? SheetId;
+            public string TitleBlockName;
+            public string Number;
+            public string Name;
+
+            public static LayoutOptions Parse(JObject args)
+            {
+                return new LayoutOptions
+                {
+                    Margin = args?.Value<double?>("marginMm") ?? 10,
+                    Gap = args?.Value<double?>("gapMm") ?? 10,
+                    BottomReserve = args?.Value<double?>("bottomReserveMm") ?? 20,
+                    CropMargin = args?.Value<double?>("cropMarginMm") ?? 1000,
+                    CropIncludeLinked = args?.Value<bool?>("cropIncludeLinked") ?? false,
+                    RequestedScale = args?.Value<int?>("scale") ?? 0,
+                    ClearSheet = args?.Value<bool?>("clearSheet") ?? true,
+                    ViewIds = args?["viewIds"]?.ToObject<long[]>() ?? Array.Empty<long>(),
+                    ScheduleIds = args?["scheduleIds"]?.ToObject<long[]>() ?? Array.Empty<long>(),
+                    SheetId = args?.Value<long?>("sheetId"),
+                    TitleBlockName = args?.Value<string>("titleBlockName"),
+                    Number = args?.Value<string>("number"),
+                    Name = args?.Value<string>("name"),
+                };
+            }
+        }
+
+        private sealed class LayoutInputs
+        {
+            public List<View> Views;
+            public List<ViewSchedule> Schedules;
+            public Dictionary<long, Rect> Crops;
+            public List<ScheduleEstimate> Estimates;
+        }
+
+        private sealed class LayoutSheetContext
+        {
+            public ViewSheet Sheet;
+            public Element TitleBlock;
+            public double TbX0, TbY0, TbX1, TbY1;
+            public double X0, Y0, X1, Y1;
+            public double ScheduleColumn, PlanRight, PlanBottom, PlanW, PlanH;
+            public int Scale;
+            // Gap is carried here because CreateLayoutItems needs it after plan metrics.
+            public double Gap;
+        }
+
+        private sealed class LayoutMeasurements
+        {
+            public List<Rect> Rects;
+            public List<Dictionary<string, object>> Placements;
+        }
+
+        private sealed class LayoutValidation
+        {
+            public List<Dictionary<string, object>> Outside;
+            public List<Dictionary<string, object>> Overlaps;
+        }
+
         public static object LayoutSheet(UIApplication app, JObject args)
         {
             var doc = Doc(app);
-            var margin = args?.Value<double?>("marginMm") ?? 10;
-            var gap = args?.Value<double?>("gapMm") ?? 10;
-            var bottomReserve = args?.Value<double?>("bottomReserveMm") ?? 20;
-            var cropMargin = args?.Value<double?>("cropMarginMm") ?? 1000;
-            var cropIncludeLinked = args?.Value<bool?>("cropIncludeLinked") ?? false;
-            var requestedScale = args?.Value<int?>("scale") ?? 0;
-            var clearSheet = args?.Value<bool?>("clearSheet") ?? true;
-            var viewIds = args?["viewIds"]?.ToObject<long[]>() ?? Array.Empty<long>();
-            var scheduleIds = args?["scheduleIds"]?.ToObject<long[]>() ?? Array.Empty<long>();
-            var sheetId = args?.Value<long?>("sheetId");
+            var options = LayoutOptions.Parse(args);
+            var inputs = ResolveInputs(doc, options);
+            var sheet = ResolveSheet(doc, options, inputs);
+            var context = BuildContext(doc, sheet, options);
+            ClearSheetContent(doc, context, options);
+            ComputePlanMetrics(inputs, context, options);
+            ApplyCropsAndScale(doc, inputs, context);
+            var items = BuildLayoutItems(inputs, context);
+            CreateLayoutItems(doc, context, items);
+            var measurements = CollectMeasurements(doc, sheet);
+            var validation = ValidateLayout(measurements, context);
+            return BuildResult(sheet, context, inputs, measurements, validation);
+        }
 
-            var views = viewIds
+        private static LayoutInputs ResolveInputs(Document doc, LayoutOptions options)
+        {
+            var views = options.ViewIds
                 .Select(id => doc.GetElement(new ElementId(id)) as View)
                 .Where(v => v != null && !v.IsTemplate && !(v is ViewSheet))
                 .ToList();
             if (views.Count == 0) throw new ArgumentException("args.viewIds must contain at least one non-template view.");
 
-            var schedules = scheduleIds
+            var schedules = options.ScheduleIds
                 .Select(id => doc.GetElement(new ElementId(id)) as ViewSchedule)
                 .Where(s => s != null && !s.IsTemplate)
                 .ToList();
@@ -99,7 +173,7 @@ namespace RevitBridge
             var crops = new Dictionary<long, Rect>();
             foreach (var view in views)
             {
-                var rect = ComputeCrop(doc, view, cropMargin, cropIncludeLinked);
+                var rect = ComputeCrop(doc, view, options.CropMargin, options.CropIncludeLinked);
                 if (rect != null) crops[view.Id.Value] = rect;
             }
 
@@ -120,6 +194,18 @@ namespace RevitBridge
                 });
             }
 
+            return new LayoutInputs
+            {
+                Views = views,
+                Schedules = schedules,
+                Crops = crops,
+                Estimates = estimates,
+            };
+        }
+
+        private static ViewSheet ResolveSheet(Document doc, LayoutOptions options, LayoutInputs inputs)
+        {
+            var sheetId = options.SheetId;
             ViewSheet sheet;
             if (sheetId != null)
             {
@@ -128,7 +214,7 @@ namespace RevitBridge
             }
             else
             {
-                var requestedName = args?.Value<string>("titleBlockName");
+                var requestedName = options.TitleBlockName;
                 var formats = TitleBlockCatalog.MeasureTitleBlocks(doc);
                 if (!string.IsNullOrWhiteSpace(requestedName))
                 {
@@ -143,19 +229,23 @@ namespace RevitBridge
                         (string.IsNullOrWhiteSpace(requestedName) ? "." : ": " + requestedName));
                 }
 
-                var chosen = TitleBlockCatalog.ChooseTitleBlock(formats, crops, estimates,
-                    margin, gap, bottomReserve, requestedScale,
+                var chosen = TitleBlockCatalog.ChooseTitleBlock(formats, inputs.Crops, inputs.Estimates,
+                    options.Margin, options.Gap, options.BottomReserve, options.RequestedScale,
                     !string.IsNullOrWhiteSpace(requestedName), out _);
                 using (var tx = new Transaction(doc, "Bridge Create Layout Sheet"))
                 {
                     tx.Start();
                     sheet = ViewSheet.Create(doc, chosen.SymbolId);
-                    try { sheet.SheetNumber = args?.Value<string>("number") ?? "ТЕСТ-ОВ-01"; } catch (Exception) { }
-                    try { sheet.Name = args?.Value<string>("name") ?? "Тестовый лист ОВ"; } catch (Exception) { }
+                    try { sheet.SheetNumber = options.Number ?? "ТЕСТ-ОВ-01"; } catch (Exception) { }
+                    try { sheet.Name = options.Name ?? "Тестовый лист ОВ"; } catch (Exception) { }
                     tx.Commit();
                 }
             }
+            return sheet;
+        }
 
+        private static LayoutSheetContext BuildContext(Document doc, ViewSheet sheet, LayoutOptions options)
+        {
             var titleBlockElement = new FilteredElementCollector(doc, sheet.Id)
                 .OfCategory(BuiltInCategory.OST_TitleBlocks)
                 .WhereElementIsNotElementType()
@@ -167,16 +257,28 @@ namespace RevitBridge
             var tbY0 = Mm(tbBox.Min.Y);
             var tbX1 = Mm(tbBox.Max.X);
             var tbY1 = Mm(tbBox.Max.Y);
-            var x0 = tbX0 + margin;
-            var y0 = tbY0 + margin + bottomReserve;
-            var x1 = tbX1 - margin;
-            var y1 = tbY1 - margin;
+            var x0 = tbX0 + options.Margin;
+            var y0 = tbY0 + options.Margin + options.BottomReserve;
+            var x1 = tbX1 - options.Margin;
+            var y1 = tbY1 - options.Margin;
             if (x1 <= x0 || y1 <= y0) throw new InvalidOperationException("Title block is too small for margins.");
 
-            // Clear previous sheet content (views are kept in the project, only viewports move).
-            if (clearSheet)
+            return new LayoutSheetContext
             {
-                var requestedViewIds = new HashSet<long>(viewIds);
+                Sheet = sheet,
+                TitleBlock = titleBlockElement,
+                TbX0 = tbX0, TbY0 = tbY0, TbX1 = tbX1, TbY1 = tbY1,
+                X0 = x0, Y0 = y0, X1 = x1, Y1 = y1,
+                Gap = options.Gap,
+            };
+        }
+
+        private static void ClearSheetContent(Document doc, LayoutSheetContext context, LayoutOptions options)
+        {
+            var sheet = context.Sheet;
+            if (options.ClearSheet)
+            {
+                var requestedViewIds = new HashSet<long>(options.ViewIds);
                 var viewportIds = new FilteredElementCollector(doc)
                     .OfClass(typeof(Viewport)).Cast<Viewport>()
                     .Where(vp => vp.SheetId == sheet.Id || requestedViewIds.Contains(vp.ViewId.Value))
@@ -196,8 +298,19 @@ namespace RevitBridge
                     }
                 }
             }
+        }
 
-            var scheduleColumn = schedules.Count > 0 ? Math.Min(170, (x1 - x0) * 0.42) : 0;
+        private static void ComputePlanMetrics(LayoutInputs inputs, LayoutSheetContext context, LayoutOptions options)
+        {
+            var x0 = context.X0;
+            var y0 = context.Y0;
+            var x1 = context.X1;
+            var y1 = context.Y1;
+            var gap = options.Gap;
+            var views = inputs.Views;
+            var crops = inputs.Crops;
+
+            var scheduleColumn = inputs.Schedules.Count > 0 ? Math.Min(170, (x1 - x0) * 0.42) : 0;
             var planRight = scheduleColumn > 0 ? x1 - scheduleColumn - gap : x1;
             var planBottom = y0;
             var planW = planRight - x0;
@@ -210,11 +323,24 @@ namespace RevitBridge
                 maxRequired = Math.Max(maxRequired, Math.Max(rect.W / planW, rect.H / planH));
             }
             var standardScales = new[] { 50, 100, 150, 200, 250, 300, 400, 500 };
-            var scale = requestedScale > 0
-                ? requestedScale
+            var scale = options.RequestedScale > 0
+                ? options.RequestedScale
                 : standardScales.FirstOrDefault(s => s >= maxRequired);
             if (scale <= 0) scale = standardScales.Last();
 
+            context.ScheduleColumn = scheduleColumn;
+            context.PlanRight = planRight;
+            context.PlanBottom = planBottom;
+            context.PlanW = planW;
+            context.PlanH = planH;
+            context.Scale = scale;
+        }
+
+        private static void ApplyCropsAndScale(Document doc, LayoutInputs inputs, LayoutSheetContext context)
+        {
+            var views = inputs.Views;
+            var crops = inputs.Crops;
+            var scale = context.Scale;
             using (var tx = new Transaction(doc, "Bridge Crop And Scale Views"))
             {
                 tx.Start();
@@ -225,6 +351,15 @@ namespace RevitBridge
                 }
                 tx.Commit();
             }
+        }
+
+        private static List<Placement> BuildLayoutItems(LayoutInputs inputs, LayoutSheetContext context)
+        {
+            var views = inputs.Views;
+            var crops = inputs.Crops;
+            var estimates = inputs.Estimates;
+            var scale = context.Scale;
+            var scheduleColumn = context.ScheduleColumn;
 
             var items = new List<Placement>();
             foreach (var view in views)
@@ -256,10 +391,20 @@ namespace RevitBridge
                 });
             }
 
-            items = items.OrderByDescending(i => i.H).ThenByDescending(i => i.W).ToList();
+            return items.OrderByDescending(i => i.H).ThenByDescending(i => i.W).ToList();
+        }
 
-            var createdViewportIds = new List<ElementId>();
-            var createdScheduleIds = new List<ElementId>();
+        private static void CreateLayoutItems(Document doc, LayoutSheetContext context, List<Placement> items)
+        {
+            var x0 = context.X0;
+            var x1 = context.X1;
+            var y1 = context.Y1;
+            var gap = context.Gap;
+            var planRight = context.PlanRight;
+            var planH = context.PlanH;
+            var scheduleColumn = context.ScheduleColumn;
+            var sheet = context.Sheet;
+
             using (var tx = new Transaction(doc, "Bridge Layout Sheet"))
             {
                 tx.Start();
@@ -278,7 +423,6 @@ namespace RevitBridge
                     item.Y = py;
                     var center = new XYZ(Ft(item.X + item.W / 2), Ft(item.Y - item.H / 2), 0);
                     var vp = Viewport.Create(doc, sheet.Id, item.View.Id, center);
-                    createdViewportIds.Add(vp.Id);
                     px += item.W + gap;
                     shelfHeight = Math.Max(shelfHeight, item.H);
                 }
@@ -295,7 +439,6 @@ namespace RevitBridge
                         if (item.W > scheduleColumn) item.W = scheduleColumn;
                         var point = new XYZ(Ft(item.X), Ft(item.Y - item.H), 0);
                         var instance = ScheduleSheetInstance.Create(doc, sheet.Id, item.Schedule.Id, point);
-                        createdScheduleIds.Add(instance.Id);
                         sy -= item.H + gap;
                     }
                 }
@@ -308,15 +451,16 @@ namespace RevitBridge
                         item.Y = sy;
                         var point = new XYZ(Ft(item.X), Ft(item.Y - item.H), 0);
                         var instance = ScheduleSheetInstance.Create(doc, sheet.Id, item.Schedule.Id, point);
-                        createdScheduleIds.Add(instance.Id);
                         sy -= item.H + gap;
                     }
                 }
 
                 tx.Commit();
             }
+        }
 
-            // Validate actual placement rectangles.
+        private static LayoutMeasurements CollectMeasurements(Document doc, ViewSheet sheet)
+        {
             var rects = new List<Rect>();
             var placements = new List<Dictionary<string, object>>();
             foreach (var vp in new FilteredElementCollector(doc, sheet.Id).OfClass(typeof(Viewport)).Cast<Viewport>())
@@ -360,6 +504,17 @@ namespace RevitBridge
                 });
             }
 
+            return new LayoutMeasurements { Rects = rects, Placements = placements };
+        }
+
+        private static LayoutValidation ValidateLayout(LayoutMeasurements measurements, LayoutSheetContext context)
+        {
+            var rects = measurements.Rects;
+            var x0 = context.X0;
+            var y0 = context.Y0;
+            var x1 = context.X1;
+            var y1 = context.Y1;
+
             var outside = new List<Dictionary<string, object>>();
             var overlaps = new List<Dictionary<string, object>>();
             var tolerance = 1.0;
@@ -395,31 +550,45 @@ namespace RevitBridge
                 }
             }
 
+            return new LayoutValidation { Outside = outside, Overlaps = overlaps };
+        }
+
+        private static List<Dictionary<string, object>> BuildCropsReport(LayoutInputs inputs)
+        {
+            var views = inputs.Views;
+            var crops = inputs.Crops;
+            return views.Select(v =>
+                {
+                    var rect = crops.TryGetValue(v.Id.Value, out var r) ? r : FallbackRect(v);
+                    return new Dictionary<string, object>
+                    {
+                        { "id", v.Id.Value },
+                        { "name", v.Name },
+                        { "level", (v as ViewPlan)?.GenLevel?.Name ?? "" },
+                        { "levelId", v.LevelId.Value },
+                        { "x0Mm", rect.X0 }, { "y0Mm", rect.Y0 },
+                        { "x1Mm", rect.X1 }, { "y1Mm", rect.Y1 },
+                        { "widthMm", rect.W }, { "heightMm", rect.H },
+                    };
+                }).ToList();
+        }
+
+        private static Dictionary<string, object> BuildResult(ViewSheet sheet, LayoutSheetContext context,
+            LayoutInputs inputs, LayoutMeasurements measurements, LayoutValidation validation)
+        {
+            var outside = validation.Outside;
+            var overlaps = validation.Overlaps;
             return new Dictionary<string, object>
             {
                 { "sheetId", sheet.Id.Value },
                 { "sheetNumber", sheet.SheetNumber },
                 { "sheetName", sheet.Name },
-                { "sheetWidthMm", tbX1 - tbX0 },
-                { "sheetHeightMm", tbY1 - tbY0 },
-                { "usable", new[] { x0, y0, x1, y1 } },
-                { "scale", scale },
-                { "crops", views.Select(v =>
-                    {
-                        var rect = crops.TryGetValue(v.Id.Value, out var r) ? r : FallbackRect(v);
-                        return new Dictionary<string, object>
-                        {
-                            { "id", v.Id.Value },
-                            { "name", v.Name },
-                            { "level", (v as ViewPlan)?.GenLevel?.Name ?? "" },
-                            { "levelId", v.LevelId.Value },
-                            { "x0Mm", rect.X0 }, { "y0Mm", rect.Y0 },
-                            { "x1Mm", rect.X1 }, { "y1Mm", rect.Y1 },
-                            { "widthMm", rect.W }, { "heightMm", rect.H },
-                        };
-                    }).ToList()
-                },
-                { "placements", placements },
+                { "sheetWidthMm", context.TbX1 - context.TbX0 },
+                { "sheetHeightMm", context.TbY1 - context.TbY0 },
+                { "usable", new[] { context.X0, context.Y0, context.X1, context.Y1 } },
+                { "scale", context.Scale },
+                { "crops", BuildCropsReport(inputs) },
+                { "placements", measurements.Placements },
                 { "outside", outside },
                 { "overlaps", overlaps },
                 { "valid", outside.Count == 0 && overlaps.Count == 0 },
