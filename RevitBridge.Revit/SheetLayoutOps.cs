@@ -43,6 +43,7 @@ namespace RevitBridge
         private sealed class TitleBlockInfo
         {
             public ElementId SymbolId;
+            public string FamilyName;
             public string Name;
             public double W;
             public double H;
@@ -516,12 +517,14 @@ namespace RevitBridge
         {
             var doc = Doc(app);
             var items = MeasureTitleBlocks(doc)
-                .GroupBy(f => f.Name + "|" + Math.Round(f.W) + "x" + Math.Round(f.H))
+                .GroupBy(f => f.FamilyName + "|" + f.Name + "|"
+                              + Math.Round(f.W) + "x" + Math.Round(f.H))
                 .Select(g => g.First())
                 .OrderBy(f => f.W * f.H)
                 .Select(f => new Dictionary<string, object>
                 {
                     { "id", f.SymbolId.Value },
+                    { "familyName", f.FamilyName },
                     { "name", f.Name },
                     { "widthMm", f.W },
                     { "heightMm", f.H },
@@ -545,10 +548,12 @@ namespace RevitBridge
         private static List<TitleBlockInfo> MeasureTitleBlocks(Document doc)
         {
             var result = new List<TitleBlockInfo>();
+            // Не группируем по s.Name: у разных семейств бывают одноимённые
+            // типы (например, «Форма 3» для A2 и A3). Иначе один из форматов
+            // теряется и compose_sheet не видит A2.
             var symbols = new FilteredElementCollector(doc).OfClass(typeof(FamilySymbol))
                 .OfCategory(BuiltInCategory.OST_TitleBlocks).Cast<FamilySymbol>()
-                .Where(s => !string.IsNullOrWhiteSpace(s.Name))
-                .GroupBy(s => s.Name).Select(g => g.First())
+                .Where(s => s.Family != null)
                 .ToList();
 
             using (var tx = new Transaction(doc, "Bridge Measure Title Blocks"))
@@ -570,7 +575,10 @@ namespace RevitBridge
                             result.Add(new TitleBlockInfo
                             {
                                 SymbolId = symbol.Id,
-                                Name = symbol.Name,
+                                FamilyName = symbol.Family.Name,
+                                Name = string.IsNullOrWhiteSpace(symbol.Name)
+                                    ? symbol.Family.Name
+                                    : symbol.Name,
                                 W = Mm(box.Max.X - box.Min.X),
                                 H = Mm(box.Max.Y - box.Min.Y),
                             });
@@ -596,7 +604,8 @@ namespace RevitBridge
         {
             var unique = formats
                 .Where(f => allowCustom || FormatName(f.W, f.H) != "custom")
-                .GroupBy(f => f.Name + "|" + Math.Round(f.W) + "x" + Math.Round(f.H))
+                .GroupBy(f => f.FamilyName + "|" + f.Name + "|"
+                              + Math.Round(f.W) + "x" + Math.Round(f.H))
                 .Select(g => g.First())
                 .OrderBy(f => f.W * f.H)
                 .ToList();

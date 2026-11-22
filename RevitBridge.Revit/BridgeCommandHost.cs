@@ -126,6 +126,15 @@ namespace RevitBridge
             Register("revit.close_document", "Close the active document", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"save\":{\"type\":\"boolean\"}}}"),
                 args => _handler.Run(app => McpOps.Close(app, args?.Value<bool?>("save") ?? false), 180000));
+            Register("revit.save_document", "Save the active document (optionally Save As)", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}}}"),
+                args => _handler.Run(app => McpOps.Save(app, args?.Value<string>("path")), 600000));
+            Register("revit.new_project_from_template", "Create and save a project from a .rte template", BridgeTransaction.Write,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"templatePath\":{\"type\":\"string\"},\"projectPath\":{\"type\":\"string\"},\"activate\":{\"type\":\"boolean\"}},\"required\":[\"templatePath\",\"projectPath\"]}"),
+                args => _handler.Run(app => McpOps.NewProjectFromTemplate(app,
+                    args?.Value<string>("templatePath"),
+                    args?.Value<string>("projectPath"),
+                    args?.Value<bool?>("activate") ?? true), 600000));
 
             // Ported from RevitMcpServer command set (P4).
             Register("revit.current_view_info", "Current view info", BridgeTransaction.Read, null,
@@ -136,6 +145,9 @@ namespace RevitBridge
             Register("revit.selected_elements", "Currently selected elements", BridgeTransaction.Read,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\"}}}"),
                 args => _handler.Run(app => ExtendedOps.SelectedElements(app, args as JObject ?? new JObject()), 60000));
+            Register("revit.element_parameters", "Read instance and type parameters of an element", BridgeTransaction.Read,
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"elementId\":{\"type\":\"integer\"}},\"required\":[\"elementId\"]}"),
+                args => _handler.Run(app => ExtendedOps.ElementParameters(app, args as JObject ?? new JObject()), 60000));
             Register("revit.tag_walls", "Tag walls in the current view", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\"}}}"),
                 args => _handler.Run(app => ExtendedOps.TagWalls(app, args as JObject ?? new JObject()), 120000));
@@ -227,7 +239,7 @@ namespace RevitBridge
             Register("pipeline.reset_energy_analysis", "Delete Revit energy analysis detail model and its analytical spaces", BridgeTransaction.Write, null,
                 args => _handler.Run(app => AuditOps.ResetEnergyAnalysis(app, args as JObject ?? new JObject()), 300000));
             Register("pipeline.create_sheet", "Create a sheet", BridgeTransaction.Write,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"number\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"titleBlockName\":{\"type\":\"string\"}}}"),
+                JToken.Parse("{\"type\":\"object\",\"properties\":{\"number\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"titleBlockName\":{\"type\":\"string\"},\"titleBlockFamily\":{\"type\":\"string\"}}}"),
                 args => _handler.Run(app => PipelineOps.CreateSheet(app, args as JObject ?? new JObject()), 120000));
             Register("pipeline.place_view", "Place a view on a sheet", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"sheetId\":{\"type\":\"integer\"},\"viewId\":{\"type\":\"integer\"},\"xMm\":{\"type\":\"number\"},\"yMm\":{\"type\":\"number\"}},\"required\":[\"sheetId\",\"viewId\"]}"),

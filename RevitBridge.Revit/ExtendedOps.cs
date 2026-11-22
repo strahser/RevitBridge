@@ -332,6 +332,57 @@ namespace RevitBridge
             return new Dictionary<string, object> { { "action", action }, { "count", ids.Count } };
         }
 
+        public static object ElementParameters(UIApplication app, JObject args)
+        {
+            var doc = Doc(app);
+            var elementId = args?.Value<long?>("elementId")
+                ?? throw new ArgumentException("args.elementId is required");
+            var element = doc.GetElement(new ElementId(elementId))
+                ?? throw new InvalidOperationException("Element not found: " + elementId);
+
+            var items = new List<Dictionary<string, object>>();
+            void Collect(Element source, string scope)
+            {
+                if (source == null) return;
+                foreach (Parameter p in source.Parameters)
+                {
+                    object value;
+                    switch (p.StorageType)
+                    {
+                        case StorageType.String: value = p.AsString(); break;
+                        case StorageType.Integer: value = p.AsInteger(); break;
+                        case StorageType.Double: value = p.AsDouble(); break;
+                        case StorageType.ElementId: value = p.AsElementId()?.Value; break;
+                        default: value = null; break;
+                    }
+                    items.Add(new Dictionary<string, object>
+                    {
+                        { "scope", scope },
+                        { "name", p.Definition?.Name ?? "" },
+                        { "builtIn", (p.Definition as InternalDefinition)?.BuiltInParameter.ToString() ?? "" },
+                        { "storageType", p.StorageType.ToString() },
+                        { "value", value },
+                        { "valueString", p.AsValueString() ?? "" },
+                        { "isReadOnly", p.IsReadOnly },
+                        { "isShared", p.IsShared },
+                    });
+                }
+            }
+
+            Collect(element, "instance");
+            var type = doc.GetElement(element.GetTypeId());
+            Collect(type, "type");
+
+            return new Dictionary<string, object>
+            {
+                { "id", element.Id.Value },
+                { "name", element.Name ?? "" },
+                { "typeName", type?.Name ?? "" },
+                { "count", items.Count },
+                { "parameters", items },
+            };
+        }
+
         public static object ColorSplash(UIApplication app, JObject args)
         {
             var uidoc = app.ActiveUIDocument ?? throw new InvalidOperationException("Нет активного документа.");

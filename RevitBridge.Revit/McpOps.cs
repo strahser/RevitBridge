@@ -66,6 +66,67 @@ internal static partial class McpOps
         return new Dictionary<string, object> { { "closed", true }, { "title", title } };
     }
 
+    public static object Save(UIApplication app, string path)
+    {
+        var doc = app.ActiveUIDocument?.Document
+            ?? throw new InvalidOperationException("Нет активного документа.");
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            var full = Path.GetFullPath(path);
+            var folder = Path.GetDirectoryName(full);
+            if (!string.IsNullOrWhiteSpace(folder))
+                Directory.CreateDirectory(folder);
+            var options = new SaveAsOptions { OverwriteExistingFile = true };
+            doc.SaveAs(full, options);
+        }
+        else
+        {
+            doc.Save();
+        }
+        return new Dictionary<string, object>
+        {
+            { "path", doc.PathName },
+            { "title", doc.Title },
+            { "isModified", doc.IsModified },
+        };
+    }
+
+    public static object NewProjectFromTemplate(UIApplication app, string templatePath,
+                                                string projectPath, bool activate)
+    {
+        if (string.IsNullOrWhiteSpace(templatePath) || !File.Exists(templatePath))
+            throw new FileNotFoundException("Template not found: " + templatePath);
+        if (string.IsNullOrWhiteSpace(projectPath))
+            throw new ArgumentException("projectPath is empty");
+
+        var fullProjectPath = Path.GetFullPath(projectPath);
+        var folder = Path.GetDirectoryName(fullProjectPath);
+        if (!string.IsNullOrWhiteSpace(folder))
+            Directory.CreateDirectory(folder);
+
+        var doc = app.Application.NewProjectDocument(templatePath);
+        if (doc == null)
+            throw new InvalidOperationException("NewProjectDocument returned null.");
+
+        var sheetCount = new FilteredElementCollector(doc)
+            .OfClass(typeof(ViewSheet)).GetElementCount();
+        var options = new SaveAsOptions { OverwriteExistingFile = true };
+        doc.SaveAs(fullProjectPath, options);
+        doc.Close(false);
+
+        if (activate)
+        {
+            app.OpenAndActivateDocument(fullProjectPath);
+        }
+
+        return new Dictionary<string, object>
+        {
+            { "path", fullProjectPath },
+            { "sheets", sheetCount },
+            { "activated", activate },
+        };
+    }
+
     public static object DocInfo(UIApplication app)
     {
         var uidoc = app.ActiveUIDocument;

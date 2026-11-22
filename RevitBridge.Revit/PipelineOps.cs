@@ -99,6 +99,7 @@ namespace RevitBridge
                         { "name", s.Name },
                         { "views", s.GetAllPlacedViews().Count },
                         { "schedules", new FilteredElementCollector(doc, s.Id).OfClass(typeof(ScheduleSheetInstance)).GetElementCount() },
+                        { "titleBlockId", titleBlock == null ? 0 : titleBlock.Id.Value },
                         { "widthMm", outline == null ? 0 : (outline.Max.U - outline.Min.U) * 304.8 },
                         { "heightMm", outline == null ? 0 : (outline.Max.V - outline.Min.V) * 304.8 },
                         { "tbWidthMm", tbBox == null ? 0 : (tbBox.Max.X - tbBox.Min.X) * 304.8 },
@@ -1096,12 +1097,22 @@ namespace RevitBridge
             var number = args?.Value<string>("number") ?? "ТЕСТ-01";
             var name = args?.Value<string>("name") ?? "Тестовый лист ОВ";
             var titleBlockName = args?.Value<string>("titleBlockName");
+            var titleBlockFamily = args?.Value<string>("titleBlockFamily");
 
-            var titleBlock = new FilteredElementCollector(doc).OfClass(typeof(FamilySymbol))
+            var candidates = new FilteredElementCollector(doc).OfClass(typeof(FamilySymbol))
                 .OfCategory(BuiltInCategory.OST_TitleBlocks).Cast<FamilySymbol>()
+                .Where(s => s.Family != null)
+                .Where(s => string.IsNullOrWhiteSpace(titleBlockFamily) ||
+                            string.Equals(s.Family.Name, titleBlockFamily,
+                                          StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var titleBlock = candidates
                 .FirstOrDefault(s => string.IsNullOrWhiteSpace(titleBlockName) ||
-                                     string.Equals(s.Name, titleBlockName, StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidOperationException("Title block family symbol not loaded.");
+                                     string.Equals(s.Name, titleBlockName,
+                                                   StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException(
+                    "Title block family symbol not loaded: "
+                    + (titleBlockFamily ?? "*") + " / " + (titleBlockName ?? "*"));
 
             ViewSheet sheet;
             using (var tx = new Transaction(doc, "Bridge Create Sheet"))
