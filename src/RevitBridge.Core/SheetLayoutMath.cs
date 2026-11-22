@@ -80,6 +80,18 @@ namespace RevitBridge.Core
             return "custom:" + (fallbackName ?? "");
         }
 
+        /// <summary>Finest automatic plan scale: 1:50. Callers may override per view.</summary>
+        public const int FinestAutomaticScale = 50;
+
+        private static readonly int[] StandardScales =
+            { FinestAutomaticScale, 100, 150, 200, 250, 300, 400, 500 };
+
+        /// <summary>
+        /// Pick the smallest standard Revit scale denominator that fits the crops.
+        /// The denominator is used as a divisor (<c>width / scale</c>), in mm.
+        /// The 1:50 floor is a product decision: building plans are normally issued
+        /// at 1:50..1:500; a finer automatic scale makes the sheet unreadable.
+        /// </summary>
         public static int RequiredScale(IEnumerable<Box> crops, double planW, double planH)
         {
             var required = 1.0;
@@ -87,12 +99,11 @@ namespace RevitBridge.Core
             {
                 required = Math.Max(required, Math.Max(box.W / planW, box.H / planH));
             }
-            var standardScales = new[] { 50, 100, 150, 200, 250, 300, 400, 500 };
-            foreach (var scale in standardScales)
+            foreach (var scale in StandardScales)
             {
                 if (scale >= required) return scale;
             }
-            return standardScales.Last();
+            return StandardScales.Last();
         }
 
         public static bool ShelfFits(IReadOnlyList<Box> items, double width, double height, double gap)

@@ -31,10 +31,26 @@ public class SheetLayoutMathTests
             new SheetLayoutMath.Box(420, 297),
             new SheetLayoutMath.Box(210, 297),
         };
-        // Preserve the legacy formula from SheetLayoutOps (it treats the
-        // resulting ratio as a denominator directly). Do not change this
-        // silently; the unit interpretation is tracked in P4.
+        // Decision (2026-11-22): the returned value is a Revit scale denominator
+        // used as a divisor (width / scale); 1:50 is the finest automatic scale.
+        await Assert.That(SheetLayoutMath.RequiredScale(crops, 200, 150))
+            .IsEqualTo(SheetLayoutMath.FinestAutomaticScale);
         await Assert.That(SheetLayoutMath.RequiredScale(crops, 200, 150)).IsEqualTo(50);
+    }
+
+    [Test]
+    public async Task RequiredScale_Never_Goes_Finer_Than_1_50()
+    {
+        var tiny = new[] { new SheetLayoutMath.Box(20, 10) };
+        await Assert.That(SheetLayoutMath.RequiredScale(tiny, 200, 150)).IsEqualTo(50);
+    }
+
+    [Test]
+    public async Task RequiredScale_Grows_For_Large_Crops()
+    {
+        // 12000 / 200 = 60 -> the first standard denominator >= 60 is 100.
+        var large = new[] { new SheetLayoutMath.Box(12000, 9000) };
+        await Assert.That(SheetLayoutMath.RequiredScale(large, 200, 150)).IsEqualTo(100);
     }
 
     [Test]
