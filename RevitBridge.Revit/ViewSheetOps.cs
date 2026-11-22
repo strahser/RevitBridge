@@ -19,8 +19,15 @@ namespace RevitBridge
                 .OrderBy(v => v.ViewType.ToString()).ThenBy(v => v.Name)
                 .Select(v =>
                 {
-                    // View templates have no crop box; Outline throws for them.
-                    var outline = v.IsTemplate ? null : v.Outline;
+                    // View templates have no crop box; both Outline and
+                    // CropBoxActive throw for them.
+                    BoundingBoxUV outline = null;
+                    var cropActive = false;
+                    if (!v.IsTemplate)
+                    {
+                        outline = v.Outline;
+                        cropActive = v.CropBoxActive;
+                    }
                     return new Dictionary<string, object>
                     {
                         { "id", v.Id.Value },
@@ -28,7 +35,7 @@ namespace RevitBridge
                         { "viewType", v.ViewType.ToString() },
                         { "isTemplate", v.IsTemplate },
                         { "scale", v.Scale },
-                        { "cropActive", v.CropBoxActive },
+                        { "cropActive", cropActive },
                         { "outlineMinMm", outline == null ? null : new[]
                             {
                                 outline.Min.U * 304.8, outline.Min.V * 304.8,
