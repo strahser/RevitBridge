@@ -913,24 +913,38 @@ def _gateway_call(args):
     tool_args = args.get("args") or {}
     confirmed = bool(args.get("confirmed", False))
     started = time.time()
+    original_name = name
+    if name == "revit_run_heatloss":
+        key = str(tool_args.get("command") or "calculations").strip().casefold()
+        if key not in HEATLOSS_COMMANDS:
+            return {
+                "error": "unknown_heatloss_command",
+                "command": key,
+                "allowed": sorted(HEATLOSS_COMMANDS),
+            }
+        name = "heatloss." + key
+        tool_args = {}
     try:
         result = _get_gateway().call(name, tool_args, confirmed=confirmed)
-        _audit_call(name, "ok", started, tool_args)
+        _audit_call(original_name, "ok", started, args.get("args") or {})
         if isinstance(result, dict) and "content" in result and "isError" in result:
             return result
         return result
     except PolicyError as exc:
-        _audit_call(name, "policy_error", started, tool_args, exc.code)
+        _audit_call(original_name, "policy_error", started,
+                    args.get("args") or {}, exc.code)
         return {"error": exc.code, "message": exc.message, "hint": exc.hint}
     except KeyError:
-        _audit_call(name, "unknown_tool", started, tool_args, "unknown_tool")
+        _audit_call(original_name, "unknown_tool", started,
+                    args.get("args") or {}, "unknown_tool")
         return {
             "error": "unknown_tool",
             "tool": name,
             "hint": "Use tools_search to discover available tool names.",
         }
     except Exception as exc:
-        _audit_call(name, "provider_error", started, tool_args, "tool_call_failed")
+        _audit_call(original_name, "provider_error", started,
+                    args.get("args") or {}, "tool_call_failed")
         return {
             "error": "tool_call_failed",
             "tool": name,
@@ -953,10 +967,18 @@ def _gateway_health(args):
         return _bridge_unavailable(exc)
 
 
+# Static compatibility shim: the old HeatLoss HTTP endpoint is gone; route the
+# documented keys to the canonical WS manifest commands.
+HEATLOSS_COMMANDS = frozenset({
+    "settings", "modeling", "calculations", "main",
+    "reports", "tools", "about", "snapshot",
+})
+
 # Structured failures that must reach MCP clients with isError=true.
 _MCP_ERROR_CODES = frozenset({
     "legacy_write_disabled", "bridge_unavailable", "write_blocked",
     "confirmation_required", "unknown_tool", "tool_call_failed",
+    "unknown_heatloss_command",
 })
 
 
@@ -1007,8 +1029,6 @@ def tool_call(name, args):
     # WS_STATIC_MAP above (WS commands only; no HTTP GET/POST at all).
     if name == "revit_commands":
         return _api("GET", "/commands", timeout=30)
-    if name == "revit_run_heatloss":
-        return _api("POST", "/run", {"command": args.get("command") or "calculations"}, timeout=300)
     if name == "revit_create_level":
         return _api("POST", "/create_level", {"name": args.get("name"), "elevation_mm": args.get("elevation_mm", 0)}, timeout=120)
     if name == "revit_list_wall_types":
