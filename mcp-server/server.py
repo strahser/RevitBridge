@@ -30,6 +30,11 @@ import time
 import urllib.parse
 import urllib.request
 
+try:  # package import
+    from .models import PolicyError, ProviderHealth, ToolSpec
+except ImportError:  # flat import: <mcp-server> directory is on sys.path
+    from models import PolicyError, ProviderHealth, ToolSpec  # type: ignore[no-redef]
+
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "revit-bridge"
 SERVER_VERSION = "0.1.0"
@@ -593,8 +598,229 @@ for _tool in TOOLS:
     _tool["annotations"] = _static_annotations(_tool["name"])
 
 
+# ---------------------------------------------------------------- gateway (P2.4-P2.8)
+# Meta tools are kept OUT of TOOLS: they are not P1 static tools, must not
+# inherit name-based static annotations and must not be added to
+# _STATIC_TOOL_NAMES (otherwise the static write policy would see them).
+# They are published through ALL_TOOLS, which is what tools/list advertises.
+
+META_TOOLS = [
+    {
+        "name": "tools_search",
+        "description": (
+            "Search the unified tool catalog (Revit WS commands, DwgParser "
+            "child tools and static MCP tools). Returns tool descriptors."
+        ),
+        "inputSchema": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "Case-insensitive substring"},
+            "domain": {"type": "string", "description": "Exact domain filter (revit, pipeline, dwg, ...)"},
+            "read_only": {"type": "boolean", "description": "True: reads only; False: writers only"},
+            "limit": {"type": "integer", "description": "Max results (default 50)"},
+        }, "required": []},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False,
+                        "idempotentHint": True, "openWorldHint": False},
+    },
+    {
+        "name": "tools_describe",
+        "description": "Describe one catalog tool (schema, provider, safety annotations).",
+        "inputSchema": {"type": "object", "properties": {
+            "name": {"type": "string", "description": "Tool name, canonical name or alias"},
+        }, "required": ["name"]},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False,
+                        "idempotentHint": True, "openWorldHint": False},
+    },
+    {
+        "name": "tools_call",
+        "description": (
+            "Call any catalog tool by name with catalog policy enforcement; "
+            "writes need MCP_PROFILE=revit-write / MCP_ALLOW_WRITES and "
+            "destructive tools need confirmed=true."
+        ),
+        "inputSchema": {"type": "object", "properties": {
+            "name": {"type": "string", "description": "Tool name, canonical name or alias"},
+            "args": {"type": "object", "description": "Arguments for the target tool"},
+            "confirmed": {"type": "boolean", "description": "Explicit approval for destructive tools"},
+        }, "required": ["name"]},
+        "annotations": {"readOnlyHint": False, "destructiveHint": True,
+                        "idempotentHint": False, "openWorldHint": False},
+    },
+]
+_META_TOOL_NAMES = frozenset(tool["name"] for tool in META_TOOLS)
+ALL_TOOLS = TOOLS + META_TOOLS
+
+
+class StaticToolProvider:
+    """Wrap the 61 P1 static tools as a gateway provider (no meta tools)."""
+
+    name = "static"
+
+    def list_tools(self):
+        by_name = {tool["name"]: tool for tool in TOOLS}
+        return [
+            ToolSpec(
+                name=name,
+                canonical=name,
+                description=by_name[name].get("description") or "",
+                input_schema=by_name[name].get("inputSchema") or {},
+                annotations=dict(by_name[name].get("annotations") or {}),
+                provider=self.name,
+                domain=name.split("_")[0],
+            )
+            for name in _STATIC_TOOL_NAMES
+        ]
+
+    def call(self, name, args):
+        # Reuse the unchanged P1 dispatcher (WS migration + write blocking).
+        return tool_call(name, args)
+
+    def health(self):
+        return ProviderHealth(self.name, True, "embedded", len(_STATIC_TOOL_NAMES))
+
+
+_GATEWAY = None
+
+
+def _gateway_commands():
+    """Normalise commands.list payloads for RevitWsProvider."""
+
+    payload = _bridge_call("commands.list", {}, timeout=5)
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        return payload.get("commands") or []
+    return []
+
+
+def _gateway_dwg_call(bare_name, args):
+    """Map a stripped child tool name back through the dwg_ proxy table."""
+
+    _refresh_child_tools()
+    original = _CHILD_TOOL_MAP.get(
+        "dwg_" + bare_name, _CHILD_TOOL_MAP.get(bare_name, bare_name)
+    )
+    return _child_request(
+        "tools/call", {"name": original, "arguments": args or {}}, timeout=300
+    )
+
+
+def _get_gateway():
+    """Build (once) the unified catalog over all three tool providers."""
+
+    global _GATEWAY
+    if _GATEWAY is not None:
+        return _GATEWAY
+
+    from catalog import ToolCatalog
+    from providers.revit_ws import RevitWsProvider
+    from providers.dwgparser import DwgParserProvider
+
+    profile = os.getenv("MCP_PROFILE", "revit-read")
+    allow_writes = os.getenv("MCP_ALLOW_WRITES", "").strip().casefold() in (
+        "1", "true", "yes", "on",
+    )
+    gateway = ToolCatalog(profile=profile, allow_writes=allow_writes)
+    gateway.register(RevitWsProvider(
+        _gateway_commands,
+        lambda name, args: _bridge_call(
+            "call", {"command": name, "args": args}, timeout=180
+        ),
+    ))
+    gateway.register(DwgParserProvider(_child_tools, _gateway_dwg_call))
+    gateway.register(StaticToolProvider())
+    _GATEWAY = gateway
+    return gateway
+
+
+def _gateway_spec(spec):
+    return {
+        "name": spec.name,
+        "canonical": spec.canonical,
+        "description": spec.description,
+        "domain": spec.domain,
+        "provider": spec.provider,
+        "annotations": dict(spec.annotations),
+        "deprecated": bool(spec.deprecated),
+        "aliases": list(spec.aliases),
+    }
+
+
+def _bridge_unavailable(exc):
+    return {
+        "error": "bridge_unavailable",
+        "message": str(exc),
+        "hint": "Start Revit 2024 with the RevitBridge addin, then retry.",
+    }
+
+
+def _gateway_search(args):
+    try:
+        specs = _get_gateway().search(
+            query=args.get("query") or "",
+            domain=args.get("domain") or "",
+            read_only=args.get("read_only"),
+            limit=args.get("limit", 50),
+        )
+        return [_gateway_spec(spec) for spec in specs]
+    except Exception as exc:
+        return _bridge_unavailable(exc)
+
+
+def _gateway_describe(args):
+    name = args.get("name")
+    try:
+        return _gateway_spec(_get_gateway().describe(name))
+    except KeyError:
+        return {
+            "error": "unknown_tool",
+            "tool": name,
+            "hint": "Use tools_search to discover available tool names.",
+        }
+    except Exception as exc:
+        return _bridge_unavailable(exc)
+
+
+def _gateway_call(args):
+    name = args.get("name")
+    tool_args = args.get("args") or {}
+    confirmed = bool(args.get("confirmed", False))
+    try:
+        result = _get_gateway().call(name, tool_args, confirmed=confirmed)
+        if isinstance(result, dict) and "content" in result and "isError" in result:
+            return result
+        return result
+    except PolicyError as exc:
+        return {"error": exc.code, "message": exc.message, "hint": exc.hint}
+    except KeyError:
+        return {
+            "error": "unknown_tool",
+            "tool": name,
+            "hint": "Use tools_search to discover available tool names.",
+        }
+    except Exception as exc:
+        return {
+            "error": "tool_call_failed",
+            "tool": name,
+            "message": str(exc),
+        }
+
+
+# Structured failures that must reach MCP clients with isError=true.
+_MCP_ERROR_CODES = frozenset({
+    "legacy_write_disabled", "bridge_unavailable", "write_blocked",
+    "confirmation_required", "unknown_tool", "tool_call_failed",
+})
+
+
 def tool_call(name, args):
     args = args or {}
+    # Gateway meta tools are resolved before WS_STATIC_MAP and the P1 static
+    # write policy: they are a different namespace, not static tools.
+    if name in _META_TOOL_NAMES:
+        if name == "tools_search":
+            return _gateway_search(args)
+        if name == "tools_describe":
+            return _gateway_describe(args)
+        return _gateway_call(args)
     # Static tool policy: migrated tools go to WS, the rest of the writes are
     # rejected before any dispatch (no _api / HTTP call is attempted).
     if name in WS_STATIC_MAP:
@@ -750,17 +976,18 @@ def handle(msg):
     if method == "ping":
         return {}
     if method == "tools/list":
-        return {"tools": TOOLS + _dynamic_tools() + _child_tools()}
+        return {"tools": ALL_TOOLS + _dynamic_tools() + _child_tools()}
     if method == "tools/call":
         try:
             result = tool_call(params.get("name"), params.get("arguments"))
             if isinstance(result, dict) and "content" in result and "isError" in result:
                 return result
-            if isinstance(result, dict) and result.get("error") == "legacy_write_disabled":
-                return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}],
-                        "isError": True}
+            is_error = (
+                isinstance(result, dict)
+                and result.get("error") in _MCP_ERROR_CODES
+            )
             return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}],
-                    "isError": False}
+                    "isError": is_error}
         except Exception as e:
             return {"content": [{"type": "text",
                                  "text": json.dumps({"error": str(e)}, ensure_ascii=False)}],
