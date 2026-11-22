@@ -19,7 +19,8 @@ namespace RevitBridge
                 .OrderBy(v => v.ViewType.ToString()).ThenBy(v => v.Name)
                 .Select(v =>
                 {
-                    var outline = v.Outline;
+                    // View templates have no crop box; Outline throws for them.
+                    var outline = v.IsTemplate ? null : v.Outline;
                     return new Dictionary<string, object>
                     {
                         { "id", v.Id.Value },
