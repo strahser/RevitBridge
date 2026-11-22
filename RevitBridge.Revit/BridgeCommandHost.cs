@@ -324,13 +324,15 @@ namespace RevitBridge
 
         private void RegisterManifestCommand(LoadedBridgeManifest loaded, BridgeCommandSpec spec, string assemblyPath)
         {
+            var transactionName = (spec.Transaction ?? "read").ToLowerInvariant();
             var descriptor = new CommandDescriptor
             {
                 Name = spec.Name,
                 Description = spec.Description ?? spec.Name,
                 Provider = loaded.Manifest.Provider ?? "plugin",
-                Transaction = (spec.Transaction ?? "read").ToLowerInvariant(),
+                Transaction = transactionName,
                 ArgsSchema = spec.ArgsSchema,
+                Safety = CommandSafetyDefaults.For(spec.Name, transactionName),
             };
 
             if (string.Equals(spec.Kind, BridgeCommandSpec.KindLiveOps, StringComparison.OrdinalIgnoreCase))
@@ -369,16 +371,18 @@ namespace RevitBridge
         }
 
         private void Register(string name, string description, BridgeTransaction transaction, JToken argsSchema,
-            Func<JToken, object> handler)
+            Func<JToken, object> handler, CommandSafety safety = null)
         {
+            var transactionName = transaction.ToString().ToLowerInvariant();
             Registry.Register(
                 new CommandDescriptor
                 {
                     Name = name,
                     Description = description,
                     Provider = "RevitBridge",
-                    Transaction = transaction.ToString().ToLowerInvariant(),
+                    Transaction = transactionName,
                     ArgsSchema = argsSchema,
+                    Safety = safety ?? CommandSafetyDefaults.For(name, transactionName),
                 },
                 args =>
                 {

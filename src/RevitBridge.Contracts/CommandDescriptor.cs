@@ -27,5 +27,8 @@ namespace RevitBridge.Contracts
 
         [JsonProperty("argsSchema", NullValueHandling = NullValueHandling.Ignore)]
         public JToken ArgsSchema { get; set; }
+
+        [JsonProperty("safety", NullValueHandling = NullValueHandling.Ignore)]
+        public CommandSafety Safety { get; set; }
     }
 }
