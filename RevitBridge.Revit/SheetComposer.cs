@@ -110,96 +110,167 @@ namespace RevitBridge
         {
             var doc = Doc(app);
             args = args ?? new JObject();
+            var options = ComposeOptions.Parse(args);
+            var sheet = FindOrCreateSheet(doc, options);
+            var context = BuildContext(doc, sheet, options, args);
 
-            var titleBlockName = args.Value<string>("titleBlockName") ?? "Форма 3";
-            if (titleBlockName.IndexOf("форма 6", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                titleBlockName.IndexOf("form 6", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (options.ClearSheet) ClearSheet(doc, sheet);
+            if (options.DrawFrame && !context.Generated)
+                SheetAnnotationOps.DrawFrame(doc, sheet, context.OriginX, context.OriginY, context.SheetW, context.SheetH);
+            if (context.Generated)
+                SheetAnnotationOps.DrawStampText(doc, sheet, context.OriginX, context.OriginY, context.SheetW, context.SheetH, args);
+
+            var items = BuildItems(doc, sheet, args, options, out var sourceBaseline);
+            var creationErrors = CreatePlacements(doc, items, context);
+            var moveErrors = AlignItems(doc, items, context);
+            var validation = ValidateItems(doc, items, context);
+            var sourceViewsUnchanged = CheckSourceViews(doc, sourceBaseline);
+            if (options.LabelViews)
+                SheetAnnotationOps.AddViewLabels(doc, sheet, items, context.OriginX, context.OriginY, context.Usable);
+
+            return BuildResult(sheet, context, items, validation, creationErrors, moveErrors, sourceViewsUnchanged);
+        }
+
+        private sealed class ComposeOptions
+        {
+            public string TitleBlockName;
+            public double Margin, Gap, StampReserve, CropMargin;
+            public bool IncludeLinked, ClearSheet, PreferIndependentCopy, DrawFrame, LabelViews;
+            public long? SheetId;
+            public string Number, Name;
+
+            public static ComposeOptions Parse(JObject args)
             {
-                throw new ArgumentException(
-                    "Форма 6 is a specification form and must not be used for drawing sheets.");
+                args = args ?? new JObject();
+                var titleBlockName = args.Value<string>("titleBlockName") ?? "Форма 3";
+                if (titleBlockName.IndexOf("форма 6", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    titleBlockName.IndexOf("form 6", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    throw new ArgumentException(
+                        "Форма 6 is a specification form and must not be used for drawing sheets.");
+                }
+
+                return new ComposeOptions
+                {
+                    TitleBlockName = titleBlockName,
+                    Margin = args.Value<double?>("marginMm") ?? 10,
+                    Gap = args.Value<double?>("gapMm") ?? 12,
+                    StampReserve = args.Value<double?>("stampReserveMm") ?? 0,
+                    CropMargin = args.Value<double?>("cropMarginMm") ?? 1000,
+                    IncludeLinked = args.Value<bool?>("cropIncludeLinked") ?? false,
+                    ClearSheet = args.Value<bool?>("clearSheet") ?? true,
+                    PreferIndependentCopy = args.Value<bool?>("independentCopy") ?? true,
+                    DrawFrame = args.Value<bool?>("drawFrame") ?? false,
+                    LabelViews = args.Value<bool?>("labelViews") ?? true,
+                    SheetId = args.Value<long?>("sheetId"),
+                    Number = args.Value<string>("number") ?? "ТЕСТ-NEW",
+                    Name = args.Value<string>("name") ?? "Тестовый лист",
+                };
             }
+        }
 
-            var margin = args.Value<double?>("marginMm") ?? 10;
-            var gap = args.Value<double?>("gapMm") ?? 12;
-            var stampReserve = args.Value<double?>("stampReserveMm") ?? 0;
-            var cropMargin = args.Value<double?>("cropMarginMm") ?? 1000;
-            var includeLinked = args.Value<bool?>("cropIncludeLinked") ?? false;
-            var clearSheet = args.Value<bool?>("clearSheet") ?? true;
-            var preferIndependentCopy = args.Value<bool?>("independentCopy") ?? true;
-            var drawFrame = args.Value<bool?>("drawFrame") ?? false;
-            var labelViews = args.Value<bool?>("labelViews") ?? true;
+        private sealed class SheetContext
+        {
+            public ViewSheet Sheet;
+            public Element TitleBlock;
+            public double OriginX, OriginY, SheetW, SheetH;
+            public string Format;
+            public string TbFamily;
+            public bool Generated;
+            public Rect Safe, Usable;
+            public double Gap;
+        }
 
+        private static ViewSheet FindOrCreateSheet(Document doc, ComposeOptions options)
+        {
             ViewSheet sheet;
-            long? sheetId = args.Value<long?>("sheetId");
-            if (sheetId.HasValue)
+            if (options.SheetId.HasValue)
             {
-                sheet = doc.GetElement(new ElementId(sheetId.Value)) as ViewSheet
-                        ?? throw new InvalidOperationException("Sheet not found: " + sheetId.Value);
+                sheet = doc.GetElement(new ElementId(options.SheetId.Value)) as ViewSheet
+                        ?? throw new InvalidOperationException("Sheet not found: " + options.SheetId.Value);
             }
             else
             {
                 var symbol = new FilteredElementCollector(doc)
                     .OfClass(typeof(FamilySymbol)).OfCategory(BuiltInCategory.OST_TitleBlocks)
                     .Cast<FamilySymbol>()
-                    .FirstOrDefault(s => string.Equals(s.Name, titleBlockName, StringComparison.OrdinalIgnoreCase) ||
-                                         string.Equals(s.Family.Name, titleBlockName, StringComparison.OrdinalIgnoreCase))
-                    ?? throw new InvalidOperationException("Title block not found: " + titleBlockName);
+                    .FirstOrDefault(s => string.Equals(s.Name, options.TitleBlockName, StringComparison.OrdinalIgnoreCase) ||
+                                         string.Equals(s.Family.Name, options.TitleBlockName, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new InvalidOperationException("Title block not found: " + options.TitleBlockName);
 
                 using (var tx = new Transaction(doc, "Bridge Compose Sheet: create"))
                 {
                     tx.Start();
                     sheet = ViewSheet.Create(doc, symbol.Id);
-                    try { sheet.SheetNumber = args.Value<string>("number") ?? "ТЕСТ-NEW"; } catch (Exception) { }
-                    try { sheet.Name = args.Value<string>("name") ?? "Тестовый лист"; } catch (Exception) { }
+                    try { sheet.SheetNumber = options.Number; } catch (Exception) { }
+                    try { sheet.Name = options.Name; } catch (Exception) { }
                     tx.Commit();
                 }
             }
+            return sheet;
+        }
 
+        private static SheetContext BuildContext(Document doc, ViewSheet sheet, ComposeOptions options, JObject args)
+        {
+            var context = new SheetContext { Sheet = sheet, Gap = options.Gap };
             var titleBlock = new FilteredElementCollector(doc, sheet.Id)
                 .OfCategory(BuiltInCategory.OST_TitleBlocks)
                 .WhereElementIsNotElementType().FirstElement()
                 ?? throw new InvalidOperationException("Title block instance not found on sheet.");
+            context.TitleBlock = titleBlock;
             var tbBox = titleBlock.get_BoundingBox(sheet)
                         ?? throw new InvalidOperationException("Title block bounding box is not available.");
-            var originX = BridgeUnits.Mm(tbBox.Min.X);
-            var originY = BridgeUnits.Mm(tbBox.Min.Y);
-            var sheetW = BridgeUnits.Mm(tbBox.Max.X - tbBox.Min.X);
-            var sheetH = BridgeUnits.Mm(tbBox.Max.Y - tbBox.Min.Y);
-            var format = SheetLayoutMath.SheetLayoutFormat(sheetW, sheetH, titleBlock.Name);
+            context.OriginX = BridgeUnits.Mm(tbBox.Min.X);
+            context.OriginY = BridgeUnits.Mm(tbBox.Min.Y);
+            context.SheetW = BridgeUnits.Mm(tbBox.Max.X - tbBox.Min.X);
+            context.SheetH = BridgeUnits.Mm(tbBox.Max.Y - tbBox.Min.Y);
+            context.Format = SheetLayoutMath.SheetLayoutFormat(context.SheetW, context.SheetH, titleBlock.Name);
             var tbType = doc.GetElement(titleBlock.GetTypeId()) as ElementType;
-            var tbFamily = tbType?.FamilyName ?? "";
-            var generated = titleBlock.Name.StartsWith("NB_", StringComparison.OrdinalIgnoreCase) ||
-                            tbFamily.StartsWith("NB_", StringComparison.OrdinalIgnoreCase);
+            context.TbFamily = tbType?.FamilyName ?? "";
+            context.Generated = titleBlock.Name.StartsWith("NB_", StringComparison.OrdinalIgnoreCase) ||
+                                context.TbFamily.StartsWith("NB_", StringComparison.OrdinalIgnoreCase);
 
             // Safe box is relative to the title block lower-left corner.
             // For A3 (Форма 3 / А3А): left grif x=5..15 mm, stamp y=0..60 mm,
             // frame x=20..415 mm. A conservative x=20..410, y=60..287 is clean.
-            var safe = SheetViewOps.ParseRect4(args["safeBoxMm"]) ??
-                       DefaultSafeBox(format, generated ? tbFamily : titleBlock.Name);
+            context.Safe = SheetViewOps.ParseRect4(args["safeBoxMm"]) ??
+                           DefaultSafeBox(context.Format, context.Generated ? context.TbFamily : titleBlock.Name);
             var usable = new Rect
             {
                 Name = "usable",
-                X0 = safe.X0 + margin,
-                Y0 = safe.Y0 + margin + stampReserve,
-                X1 = safe.X1 - margin,
-                Y1 = safe.Y1 - margin,
+                X0 = context.Safe.X0 + options.Margin,
+                Y0 = context.Safe.Y0 + options.Margin + options.StampReserve,
+                X1 = context.Safe.X1 - options.Margin,
+                Y1 = context.Safe.Y1 - options.Margin,
             };
             if (usable.W < 60 || usable.H < 60)
                 throw new InvalidOperationException("Safe box is too small for margins: " +
                                                     $"{usable.W:F1}x{usable.H:F1} mm.");
-            if (labelViews)
+            if (options.LabelViews)
             {
                 // Reserve a strip above the first row for view titles placed on top.
                 usable.Y1 -= 8;
-                gap = Math.Max(gap, 14);
+                context.Gap = Math.Max(context.Gap, 14);
             }
+            context.Usable = usable;
+            return context;
+        }
 
-            if (clearSheet) ClearSheet(doc, sheet);
-            if (drawFrame && !generated) SheetAnnotationOps.DrawFrame(doc, sheet, originX, originY, sheetW, sheetH);
-            if (generated) SheetAnnotationOps.DrawStampText(doc, sheet, originX, originY, sheetW, sheetH, args);
+        private static List<Item> BuildItems(Document doc, ViewSheet sheet, JObject args,
+            ComposeOptions options, out Dictionary<long, Dictionary<string, object>> sourceBaseline)
+        {
+            var items = BuildViewItems(doc, sheet, args, options, out sourceBaseline);
+            items.AddRange(BuildScheduleItems(doc, args));
+            if (items.Count == 0)
+                throw new ArgumentException("Specify at least one view or schedule.");
+            return items;
+        }
 
+        private static List<Item> BuildViewItems(Document doc, ViewSheet sheet, JObject args,
+            ComposeOptions options, out Dictionary<long, Dictionary<string, object>> sourceBaseline)
+        {
             var items = new List<Item>();
-            var sourceBaseline = new Dictionary<long, Dictionary<string, object>>();
+            sourceBaseline = new Dictionary<long, Dictionary<string, object>>();
 
             foreach (var vspecToken in (JArray)args["views"] ?? new JArray())
             {
@@ -217,9 +288,9 @@ namespace RevitBridge
                 var targetScale = vspec.Value<int?>("scale") ?? source.Scale;
                 if (targetScale <= 0) targetScale = 100;
 
-                var crop = SheetViewOps.ResolveCrop(doc, vspec, source, cropMargin, includeLinked);
+                var crop = SheetViewOps.ResolveCrop(doc, vspec, source, options.CropMargin, options.IncludeLinked);
                 var duplicate = SheetViewOps.DuplicateView(doc, source, vspec.Value<string>("name"),
-                    sheet.SheetNumber, preferIndependentCopy);
+                    sheet.SheetNumber, options.PreferIndependentCopy);
                 using (var tx = new Transaction(doc, "Bridge Compose Sheet: prepare view"))
                 {
                     tx.Start();
@@ -249,7 +320,12 @@ namespace RevitBridge
                 };
                 items.Add(item);
             }
+            return items;
+        }
 
+        private static List<Item> BuildScheduleItems(Document doc, JObject args)
+        {
+            var items = new List<Item>();
             foreach (var sspecToken in (JArray)args["schedules"] ?? new JArray())
             {
                 var sspec = sspecToken as JObject ?? new JObject();
@@ -274,12 +350,14 @@ namespace RevitBridge
                     EstH = sspec.Value<double?>("heightMm") ?? 8 + rows * 6,
                 });
             }
+            return items;
+        }
 
-            if (items.Count == 0)
-                throw new ArgumentException("Specify at least one view or schedule.");
-
+        private static List<Dictionary<string, object>> CreatePlacements(Document doc, List<Item> items,
+            SheetContext context)
+        {
             // Phase 1: create everything at estimated positions so Revit can size the boxes.
-            ApplyPositions(items, PlanPositions(items, usable, gap));
+            ApplyPositions(items, PlanPositions(items, context.Usable, context.Gap));
             var creationErrors = new List<Dictionary<string, object>>();
             using (var tx = new Transaction(doc, "Bridge Compose Sheet: place"))
             {
@@ -290,16 +368,16 @@ namespace RevitBridge
                     {
                         if (item.Kind == "view")
                         {
-                            var center = new XYZ(BridgeUnits.Ft(originX + item.X + item.W / 2),
-                                                 BridgeUnits.Ft(originY + item.Y - item.H / 2), 0);
-                            var vp = Viewport.Create(doc, sheet.Id, item.View.Id, center);
+                            var center = new XYZ(BridgeUnits.Ft(context.OriginX + item.X + item.W / 2),
+                                                 BridgeUnits.Ft(context.OriginY + item.Y - item.H / 2), 0);
+                            var vp = Viewport.Create(doc, context.Sheet.Id, item.View.Id, center);
                             item.InstanceId = vp.Id;
                             item.ViewportUi = SheetViewOps.EnableViewportUi(doc, vp);
                         }
                         else
                         {
-                            var point = new XYZ(BridgeUnits.Ft(originX + item.X), BridgeUnits.Ft(originY + item.Y), 0);
-                            var si = ScheduleSheetInstance.Create(doc, sheet.Id, item.Schedule.Id, point);
+                            var point = new XYZ(BridgeUnits.Ft(context.OriginX + item.X), BridgeUnits.Ft(context.OriginY + item.Y), 0);
+                            var si = ScheduleSheetInstance.Create(doc, context.Sheet.Id, item.Schedule.Id, point);
                             item.InstanceId = si.Id;
                         }
                     }
@@ -315,13 +393,32 @@ namespace RevitBridge
                 doc.Regenerate();
                 tx.Commit();
             }
+            return creationErrors;
+        }
 
+        private static List<Dictionary<string, object>> AlignItems(Document doc, List<Item> items,
+            SheetContext context)
+        {
             // Phase 2: measure ACTUAL boxes.
-            Measure(doc, sheet, originX, originY, items);
+            Measure(doc, context.Sheet, context.OriginX, context.OriginY, items);
 
             // Phase 3: re-pack using measured sizes and move to exact positions.
-            var planned = PlanPositions(items, usable, gap);
+            var planned = PlanPositions(items, context.Usable, context.Gap);
             ApplyPositions(items, planned);
+            var moveErrors = MoveToPlan(doc, items, context);
+
+            // Phase 4: measure after the move; schedules have a constant offset
+            // between their insertion point and their visible bounding box, so a
+            // second correction pass is needed for exact coordinates.
+            Measure(doc, context.Sheet, context.OriginX, context.OriginY, items);
+            var finalPlan = PlanPositions(items, context.Usable, context.Gap);
+            FineAlign(doc, items, context, finalPlan, moveErrors);
+            return moveErrors;
+        }
+
+        private static List<Dictionary<string, object>> MoveToPlan(Document doc, List<Item> items,
+            SheetContext context)
+        {
             var moveErrors = new List<Dictionary<string, object>>();
             using (var tx = new Transaction(doc, "Bridge Compose Sheet: align"))
             {
@@ -335,15 +432,15 @@ namespace RevitBridge
                         {
                             var vp = element as Viewport;
                             if (vp == null) continue;
-                            vp.SetBoxCenter(new XYZ(BridgeUnits.Ft(originX + item.X + item.W / 2),
-                                                    BridgeUnits.Ft(originY + item.Y - item.H / 2), 0));
+                            vp.SetBoxCenter(new XYZ(BridgeUnits.Ft(context.OriginX + item.X + item.W / 2),
+                                                    BridgeUnits.Ft(context.OriginY + item.Y - item.H / 2), 0));
                         }
                         else
                         {
                             var si = element as ScheduleSheetInstance;
                             var lp = si?.Location as LocationPoint;
                             if (lp == null) continue;
-                            var target = new XYZ(BridgeUnits.Ft(originX + item.X), BridgeUnits.Ft(originY + item.Y), 0);
+                            var target = new XYZ(BridgeUnits.Ft(context.OriginX + item.X), BridgeUnits.Ft(context.OriginY + item.Y), 0);
                             lp.Move(target - lp.Point);
                         }
                     }
@@ -359,12 +456,12 @@ namespace RevitBridge
                 doc.Regenerate();
                 tx.Commit();
             }
+            return moveErrors;
+        }
 
-            // Phase 4: measure after the move; schedules have a constant offset
-            // between their insertion point and their visible bounding box, so a
-            // second correction pass is needed for exact coordinates.
-            Measure(doc, sheet, originX, originY, items);
-            var finalPlan = PlanPositions(items, usable, gap);
+        private static void FineAlign(Document doc, List<Item> items, SheetContext context,
+            List<double[]> finalPlan, List<Dictionary<string, object>> moveErrors)
+        {
             using (var tx = new Transaction(doc, "Bridge Compose Sheet: fine align"))
             {
                 tx.Start();
@@ -383,8 +480,8 @@ namespace RevitBridge
                             var vp = element as Viewport;
                             if (vp != null)
                                 vp.SetBoxCenter(new XYZ(
-                                    BridgeUnits.Ft(originX + finalPlan[i][0] + item.W / 2),
-                                    BridgeUnits.Ft(originY + finalPlan[i][1] - item.H / 2), 0));
+                                    BridgeUnits.Ft(context.OriginX + finalPlan[i][0] + item.W / 2),
+                                    BridgeUnits.Ft(context.OriginY + finalPlan[i][1] - item.H / 2), 0));
                         }
                         else
                         {
@@ -404,19 +501,64 @@ namespace RevitBridge
                 doc.Regenerate();
                 tx.Commit();
             }
+        }
 
+        private static SheetValidation.Result ValidateItems(Document doc, List<Item> items, SheetContext context)
+        {
             // Phase 5: final validation on real boxes.
-            Measure(doc, sheet, originX, originY, items);
+            Measure(doc, context.Sheet, context.OriginX, context.OriginY, items);
             var tolerance = 1.0; // mm
             var validationItems = items.Where(i => i.InstanceId != null && i.W > 0)
                 .Select(i => new SheetValidation.Box(i.Name, i.X, i.Y - i.H, i.X + i.W, i.Y))
                 .ToList();
-            var validation = SheetValidation.Validate(
+            return SheetValidation.Validate(
                 validationItems,
-                new SheetValidation.Box("usable", usable.X0, usable.Y0, usable.X1, usable.Y1),
-                new SheetValidation.Box("safe", safe.X0, safe.Y0, safe.X1, safe.Y1),
-                sheetW, sheetH, tolerance);
+                new SheetValidation.Box("usable", context.Usable.X0, context.Usable.Y0, context.Usable.X1, context.Usable.Y1),
+                new SheetValidation.Box("safe", context.Safe.X0, context.Safe.Y0, context.Safe.X1, context.Safe.Y1),
+                context.SheetW, context.SheetH, tolerance);
+        }
 
+        private static bool CheckSourceViews(Document doc, Dictionary<long, Dictionary<string, object>> sourceBaseline)
+        {
+            var sourceViewsUnchanged = true;
+            foreach (var pair in sourceBaseline)
+            {
+                var view = doc.GetElement(new ElementId(pair.Key)) as View;
+                if (view == null) { sourceViewsUnchanged = false; continue; }
+                var now = SheetViewOps.SnapshotView(view);
+                foreach (var key in pair.Value.Keys)
+                {
+                    if (!now.ContainsKey(key) ||
+                        !Equals(now[key]?.ToString(), pair.Value[key]?.ToString()))
+                        sourceViewsUnchanged = false;
+                }
+            }
+            return sourceViewsUnchanged;
+        }
+
+        private static List<Dictionary<string, object>> BuildPlacements(List<Item> items)
+        {
+            return items.Select(i => new Dictionary<string, object>
+            {
+                { "kind", i.Kind },
+                { "sourceId", i.SourceId },
+                { "id", i.Kind == "view" ? i.View?.Id.Value ?? 0 : (i.Schedule?.Id.Value ?? 0) },
+                { "instanceId", i.InstanceId?.Value ?? 0 },
+                { "name", i.Name },
+                { "scale", i.Scale },
+                { "x0Mm", i.X }, { "y0Mm", i.Y - i.H },
+                { "x1Mm", i.X + i.W }, { "y1Mm", i.Y },
+                { "widthMm", i.W }, { "heightMm", i.H },
+                { "crop", i.CropInfo },
+                { "viewportUi", i.ViewportUi },
+                { "error", i.Error },
+            }).ToList();
+        }
+
+        private static Dictionary<string, object> BuildResult(ViewSheet sheet, SheetContext context, List<Item> items,
+            SheetValidation.Result validation, List<Dictionary<string, object>> creationErrors,
+            List<Dictionary<string, object>> moveErrors, bool sourceViewsUnchanged)
+        {
             // Keep the JSON shape (keys, types and order) exactly as before.
             var outside = validation.Outside.Select(e => new Dictionary<string, object>
             {
@@ -433,50 +575,20 @@ namespace RevitBridge
                 { "a", e.A }, { "b", e.B }, { "overlapMm2", e.OverlapMm2 },
             }).ToList();
 
-            var sourceViewsUnchanged = true;
-            foreach (var pair in sourceBaseline)
-            {
-                var view = doc.GetElement(new ElementId(pair.Key)) as View;
-                if (view == null) { sourceViewsUnchanged = false; continue; }
-                var now = SheetViewOps.SnapshotView(view);
-                foreach (var key in pair.Value.Keys)
-                {
-                    if (!now.ContainsKey(key) ||
-                        !Equals(now[key]?.ToString(), pair.Value[key]?.ToString()))
-                        sourceViewsUnchanged = false;
-                }
-            }
-
-            if (labelViews) SheetAnnotationOps.AddViewLabels(doc, sheet, items, originX, originY, usable);
-
-            var placements = items.Select(i => new Dictionary<string, object>
-            {
-                { "kind", i.Kind },
-                { "sourceId", i.SourceId },
-                { "id", i.Kind == "view" ? i.View?.Id.Value ?? 0 : (i.Schedule?.Id.Value ?? 0) },
-                { "instanceId", i.InstanceId?.Value ?? 0 },
-                { "name", i.Name },
-                { "scale", i.Scale },
-                { "x0Mm", i.X }, { "y0Mm", i.Y - i.H },
-                { "x1Mm", i.X + i.W }, { "y1Mm", i.Y },
-                { "widthMm", i.W }, { "heightMm", i.H },
-                { "crop", i.CropInfo },
-                { "viewportUi", i.ViewportUi },
-                { "error", i.Error },
-            }).ToList();
+            var placements = BuildPlacements(items);
 
             return new Dictionary<string, object>
             {
                 { "sheetId", sheet.Id.Value },
                 { "sheetNumber", sheet.SheetNumber },
                 { "sheetName", sheet.Name },
-                { "titleBlock", titleBlock.Name },
-                { "format", format },
-                { "sheetWidthMm", sheetW },
-                { "sheetHeightMm", sheetH },
-                { "originMm", new[] { originX, originY } },
-                { "safeBoxMm", new[] { safe.X0, safe.Y0, safe.X1, safe.Y1 } },
-                { "usableMm", new[] { usable.X0, usable.Y0, usable.X1, usable.Y1 } },
+                { "titleBlock", context.TitleBlock.Name },
+                { "format", context.Format },
+                { "sheetWidthMm", context.SheetW },
+                { "sheetHeightMm", context.SheetH },
+                { "originMm", new[] { context.OriginX, context.OriginY } },
+                { "safeBoxMm", new[] { context.Safe.X0, context.Safe.Y0, context.Safe.X1, context.Safe.Y1 } },
+                { "usableMm", new[] { context.Usable.X0, context.Usable.Y0, context.Usable.X1, context.Usable.Y1 } },
                 { "scale", items.Where(i => i.Kind == "view").Select(i => (int?)i.Scale).FirstOrDefault() ?? 0 },
                 { "placements", placements },
                 { "outside", outside },
