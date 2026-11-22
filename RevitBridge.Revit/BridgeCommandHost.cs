@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using Autodesk.Revit.UI;
 using Newtonsoft.Json.Linq;
+using RevitBridge.Commands;
 using RevitBridge.Contracts;
 using RevitBridge.Core;
 
@@ -13,7 +15,7 @@ namespace RevitBridge
     /// where the transport layer touches Revit operations; plugin commands are added
     /// later through manifests without changing this class.
     /// </summary>
-    internal sealed class BridgeCommandHost
+    internal sealed class BridgeCommandHost : ICommandRegistrar
     {
         private static readonly object ProbeLock = new object();
         private static readonly List<string> ProbeDirectories = new List<string>();
@@ -93,70 +95,8 @@ namespace RevitBridge
 
         private void RegisterBuiltins()
         {
-            Register("revit.ping", "Ping Revit and return version info", BridgeTransaction.Read, null,
-                args => _handler.Run(app => McpOps.Ping(app), 60000));
+            new RevitCoreModule().Register(this);
 
-            Register("revit.doc_info", "Active document info and counts", BridgeTransaction.Read, null,
-                args => _handler.Run(app => McpOps.DocInfo(app), 60000));
-
-            Register("revit.list_levels", "List levels", BridgeTransaction.Read, null,
-                args => _handler.Run(app => McpOps.Levels(app), 60000));
-
-            Register("revit.list_rooms", "List rooms and MEP spaces", BridgeTransaction.Read,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\"},\"offset\":{\"type\":\"integer\"}}}"),
-                args =>
-                {
-                    var limit = args?.Value<int?>("limit") ?? 50;
-                    var offset = args?.Value<int?>("offset") ?? 0;
-                    return _handler.Run(app => McpOps.Rooms(app, limit, offset), 60000);
-                });
-
-            Register("revit.open_document", "Open a .rvt document", BridgeTransaction.Write,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"detach\":{\"type\":\"boolean\"},\"audit\":{\"type\":\"boolean\"}},\"required\":[\"path\"]}"),
-                args =>
-                {
-                    var path = args?.Value<string>("path");
-                    if (string.IsNullOrWhiteSpace(path))
-                        throw new ArgumentException("args.path is required");
-                    var detach = args?.Value<bool?>("detach") ?? false;
-                    var audit = args?.Value<bool?>("audit") ?? false;
-                    return _handler.Run(app => McpOps.Open(app, path, detach, audit), 600000);
-                }, new CommandSafety
-                {
-                    ReadOnly = false,
-                    WritesDocument = false,
-                    Destructive = false,
-                    RequiresConfirmation = false,
-                    BackupRequired = false,
-                    Idempotent = false,
-                    OpenWorld = false,
-                });
-
-            Register("revit.close_document", "Close the active document", BridgeTransaction.Write,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"save\":{\"type\":\"boolean\"}}}"),
-                args => _handler.Run(app => McpOps.Close(app, args?.Value<bool?>("save") ?? false), 180000));
-            Register("revit.save_document", "Save the active document (optionally Save As)", BridgeTransaction.Write,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}}}"),
-                args => _handler.Run(app => McpOps.Save(app, args?.Value<string>("path")), 600000));
-            Register("revit.new_project_from_template", "Create and save a project from a .rte template", BridgeTransaction.Write,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"templatePath\":{\"type\":\"string\"},\"projectPath\":{\"type\":\"string\"},\"activate\":{\"type\":\"boolean\"}},\"required\":[\"templatePath\",\"projectPath\"]}"),
-                args => _handler.Run(app => McpOps.NewProjectFromTemplate(app,
-                    args?.Value<string>("templatePath"),
-                    args?.Value<string>("projectPath"),
-                    args?.Value<bool?>("activate") ?? true), 600000));
-
-            // Ported from RevitMcpServer command set (P4).
-            Register("revit.current_view_info", "Current view info", BridgeTransaction.Read, null,
-                args => _handler.Run(app => ExtendedOps.CurrentViewInfo(app), 60000));
-            Register("revit.current_view_elements", "Elements in the current view", BridgeTransaction.Read,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"categories\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"limit\":{\"type\":\"integer\"}}}"),
-                args => _handler.Run(app => ExtendedOps.CurrentViewElements(app, args as JObject ?? new JObject()), 60000));
-            Register("revit.selected_elements", "Currently selected elements", BridgeTransaction.Read,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\"}}}"),
-                args => _handler.Run(app => ExtendedOps.SelectedElements(app, args as JObject ?? new JObject()), 60000));
-            Register("revit.element_parameters", "Read instance and type parameters of an element", BridgeTransaction.Read,
-                JToken.Parse("{\"type\":\"object\",\"properties\":{\"elementId\":{\"type\":\"integer\"}},\"required\":[\"elementId\"]}"),
-                args => _handler.Run(app => ExtendedOps.ElementParameters(app, args as JObject ?? new JObject()), 60000));
             Register("revit.tag_walls", "Tag walls in the current view", BridgeTransaction.Write,
                 JToken.Parse("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\"}}}"),
                 args => _handler.Run(app => ExtendedOps.TagWalls(app, args as JObject ?? new JObject()), 120000));
@@ -380,6 +320,33 @@ namespace RevitBridge
             {
                 Environment.SetEnvironmentVariable("REVIT_BRIDGE_SUPPRESS_UI", previous);
             }
+        }
+
+        public void Add(
+            string name,
+            string description,
+            BridgeTransaction transaction,
+            JToken argsSchema,
+            Func<UIApplication, JToken, object> handler,
+            int timeoutMs,
+            CommandSafety safety = null)
+        {
+            var transactionName = transaction.ToString().ToLowerInvariant();
+            Registry.Register(
+                new CommandDescriptor
+                {
+                    Name = name,
+                    Description = description,
+                    Provider = "RevitBridge",
+                    Transaction = transactionName,
+                    ArgsSchema = argsSchema,
+                    Safety = safety ?? CommandSafetyDefaults.For(name, transactionName),
+                },
+                args =>
+                {
+                    var result = _handler.Run(app => handler(app, args), timeoutMs);
+                    return result == null ? JValue.CreateNull() : JToken.FromObject(result);
+                });
         }
 
         private static CommandSafety ViewOnlySafety()

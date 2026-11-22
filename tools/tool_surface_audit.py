@@ -27,6 +27,7 @@ Without --output the JSON report is printed to stdout (UTF-8).
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import re
@@ -45,7 +46,7 @@ KNOWN_DUPLICATES = [
 
 _TOOLS_BLOCK_RE = re.compile(r"TOOLS\s*=\s*\[")
 _NAME_RE = re.compile(r'"name"\s*:\s*"([^"]+)"')
-_REGISTER_RE = re.compile(r'Register\(\s*"([^"]+)"')
+_REGISTER_RE = re.compile(r'(?:Register|registrar\.Add)\(\s*"([^"]+)"')
 _MCP_TOOL_RE = re.compile(r"@mcp\.tool[^\n]*\n\s*def\s+([A-Za-z_]\w*)\s*\(")
 
 
@@ -66,9 +67,12 @@ def dwgparser_root() -> str:
 def source_paths(root: str | None = None, dwg_root: str | None = None) -> dict:
     root = root or bridge_root()
     dwg_root = dwg_root or dwgparser_root()
+    bridge_host = os.path.join(root, "RevitBridge.Revit", "BridgeCommandHost.cs")
+    bridge_modules = sorted(glob.glob(os.path.join(
+        root, "RevitBridge.Revit", "Commands", "*.cs")))
     return {
         "static": os.path.join(root, "mcp-server", "server.py"),
-        "bridge": os.path.join(root, "RevitBridge.Revit", "BridgeCommandHost.cs"),
+        "bridge": [bridge_host] + bridge_modules,
         "dwg": os.path.join(dwg_root, "mcp_server.py"),
         "catalog": os.path.join(dwg_root, "tools", "mcp_gen", "tools_registry.json"),
     }
@@ -130,8 +134,13 @@ def extract_static(path: str) -> list:
     return _NAME_RE.findall(block)
 
 
-def extract_bridge(path: str) -> list:
-    return _REGISTER_RE.findall(read_text(path))
+def extract_bridge(paths) -> list:
+    if isinstance(paths, str):
+        paths = [paths]
+    names = []
+    for path in paths:
+        names.extend(_REGISTER_RE.findall(read_text(path)))
+    return names
 
 
 def extract_dwg(path: str) -> list:

@@ -63,18 +63,6 @@
     "revit_create_duct"
   ],
   "bridge": [
-    "revit.ping",
-    "revit.doc_info",
-    "revit.list_levels",
-    "revit.list_rooms",
-    "revit.open_document",
-    "revit.close_document",
-    "revit.save_document",
-    "revit.new_project_from_template",
-    "revit.current_view_info",
-    "revit.current_view_elements",
-    "revit.selected_elements",
-    "revit.element_parameters",
     "revit.tag_walls",
     "revit.tag_rooms",
     "revit.model_statistics",
@@ -117,7 +105,19 @@
     "pipeline.collect_spec",
     "pipeline.debug_spaces",
     "pipeline.create_level_explication",
-    "pipeline.export_sheet_pdf"
+    "pipeline.export_sheet_pdf",
+    "revit.ping",
+    "revit.doc_info",
+    "revit.list_levels",
+    "revit.list_rooms",
+    "revit.open_document",
+    "revit.close_document",
+    "revit.save_document",
+    "revit.new_project_from_template",
+    "revit.current_view_info",
+    "revit.current_view_elements",
+    "revit.selected_elements",
+    "revit.element_parameters"
   ],
   "dwg": [
     "render_2d",
@@ -306,7 +306,11 @@
   },
   "sources": {
     "static": "D:\\Projects\\01-bim\\RevitBridge\\mcp-server\\server.py",
-    "bridge": "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\BridgeCommandHost.cs",
+    "bridge": [
+      "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\BridgeCommandHost.cs",
+      "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\Commands\\CommandModule.cs",
+      "D:\\Projects\\01-bim\\RevitBridge\\RevitBridge.Revit\\Commands\\RevitCoreModule.cs"
+    ],
     "dwg": "D:\\Projects\\01-bim\\DwgParser\\mcp_server.py",
     "catalog": "D:\\Projects\\01-bim\\DwgParser\\tools\\mcp_gen\\tools_registry.json"
   }
