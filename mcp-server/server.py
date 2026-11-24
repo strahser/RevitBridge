@@ -30,11 +30,14 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 
 try:  # package import
-    from .models import PolicyError, ProviderHealth, ToolSpec
+    from .models import (LegacyBackendUnavailable, PolicyError, ProviderHealth,
+                         ToolSpec)
 except ImportError:  # flat import: <mcp-server> directory is on sys.path
-    from models import PolicyError, ProviderHealth, ToolSpec  # type: ignore[no-redef]
+    from models import (LegacyBackendUnavailable, PolicyError, ProviderHealth,
+                        ToolSpec)  # type: ignore[no-redef]
 
 try:  # optional SQLite cache/audit
     from .catalog_store import CatalogStore
@@ -720,6 +723,25 @@ class StaticToolProvider:
 
 _GATEWAY = None
 _CATALOG_STORE = None
+_DWG_POLICY_CACHE = None
+
+
+def _get_dwg_policy():
+    """Load (once) the DwgParser classification/deprecation manifest."""
+
+    global _DWG_POLICY_CACHE
+    if _DWG_POLICY_CACHE is None:
+        try:  # package import
+            from .dwg_policy import DwgToolPolicy
+        except ImportError:  # flat import
+            from dwg_policy import DwgToolPolicy  # type: ignore[no-redef]
+        try:
+            _DWG_POLICY_CACHE = DwgToolPolicy.load()
+        except Exception as exc:  # missing manifest: stay fail-closed
+            print("warning: DwgParser policy not loaded: " + str(exc),
+                  file=sys.stderr)
+            _DWG_POLICY_CACHE = DwgToolPolicy()
+    return _DWG_POLICY_CACHE
 
 
 def _get_catalog_store():
@@ -792,16 +814,67 @@ def _gateway_commands():
     return []
 
 
+_LEGACY_TCP_MARKERS = (
+    "winerror 10061", "10061", "connection refused",
+    "actively refused", "errno 111",
+)
+
+
+def _legacy_tcp_detail(value):
+    """Return a truncated payload when it mentions a refused TCP connection."""
+
+    try:
+        text = json.dumps(value, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        text = str(value)
+    lowered = text.casefold()
+    if any(marker in lowered for marker in _LEGACY_TCP_MARKERS):
+        return text[:500]
+    return ""
+
+
+def _child_error_payload(value):
+    """Whether a child result represents a failed tool call."""
+
+    if isinstance(value, Mapping):
+        if value.get("ok") is False or value.get("isError") is True:
+            return True
+        return any(_child_error_payload(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_child_error_payload(item) for item in value)
+    if isinstance(value, str):
+        return bool(re.search(
+            r'"ok"\s*:\s*false|"isError"\s*:\s*true', value, re.IGNORECASE
+        ))
+    return False
+
+
 def _gateway_dwg_call(bare_name, args):
-    """Map a stripped child tool name back through the dwg_ proxy table."""
+    """Map a stripped child tool name back through the dwg_ proxy table.
+
+    Legacy ``dwg.revit_*`` tools reach Revit over TCP 8098. A refused
+    connection is reported as a structured ``legacy_backend_unavailable``
+    instead of a raw socket error from the child process.
+    """
 
     _refresh_child_tools()
     original = _CHILD_TOOL_MAP.get(
         "dwg_" + bare_name, _CHILD_TOOL_MAP.get(bare_name, bare_name)
     )
-    return _child_request(
-        "tools/call", {"name": original, "arguments": args or {}}, timeout=300
-    )
+    legacy = bare_name.startswith("revit_")
+    try:
+        result = _child_request(
+            "tools/call", {"name": original, "arguments": args or {}}, timeout=300
+        )
+    except Exception as exc:
+        detail = _legacy_tcp_detail(exc) if legacy else ""
+        if detail:
+            raise LegacyBackendUnavailable("dwg." + bare_name, detail) from exc
+        raise
+    detail = _legacy_tcp_detail(result) if legacy else ""
+    if detail and _child_error_payload(result):
+        raise LegacyBackendUnavailable("dwg." + bare_name, detail)
+    return result
 
 
 def _get_gateway():
@@ -815,11 +888,6 @@ def _get_gateway():
     from providers.revit_ws import RevitWsProvider
     from providers.dwgparser import DwgParserProvider
 
-    try:  # package import
-        from .dwg_policy import DwgToolPolicy
-    except ImportError:  # flat import
-        from dwg_policy import DwgToolPolicy  # type: ignore[no-redef]
-
     profile = os.getenv("MCP_PROFILE", "revit-read")
     allow_writes = os.getenv("MCP_ALLOW_WRITES", "").strip().casefold() in (
         "1", "true", "yes", "on",
@@ -831,12 +899,9 @@ def _get_gateway():
             "call", {"command": name, "args": args}, timeout=180
         ),
     ))
-    try:
-        dwg_policy = DwgToolPolicy.load()
-    except Exception as exc:  # missing manifest: stay fail-closed
-        print("warning: DwgParser policy not loaded: " + str(exc), file=sys.stderr)
-        dwg_policy = DwgToolPolicy()
-    gateway.register(DwgParserProvider(_child_tools, _gateway_dwg_call, dwg_policy))
+    gateway.register(DwgParserProvider(
+        _child_tools, _gateway_dwg_call, _get_dwg_policy()
+    ))
     gateway.register(StaticToolProvider())
     _GATEWAY = gateway
     return gateway
@@ -934,6 +999,23 @@ def _gateway_call(args):
         _audit_call(original_name, "policy_error", started,
                     args.get("args") or {}, exc.code)
         return {"error": exc.code, "message": exc.message, "hint": exc.hint}
+    except LegacyBackendUnavailable as exc:
+        _audit_call(original_name, "provider_error", started,
+                    args.get("args") or {}, "legacy_backend_unavailable")
+        replacement = _get_dwg_policy().replacement(exc.tool)
+        if replacement:
+            hint = ("Deprecated legacy path; use RevitBridge WS '"
+                    + replacement + "' via tools_call.")
+        else:
+            hint = ("Deprecated legacy path; call tools_describe('"
+                    + exc.tool + "') or tools_search for the canonical WS tool.")
+        return {
+            "error": "legacy_backend_unavailable",
+            "tool": exc.tool,
+            "message": "Legacy RevitBimCore TCP backend (8098) is unavailable: "
+                       + exc.detail,
+            "hint": hint,
+        }
     except KeyError:
         _audit_call(original_name, "unknown_tool", started,
                     args.get("args") or {}, "unknown_tool")
@@ -978,7 +1060,7 @@ HEATLOSS_COMMANDS = frozenset({
 _MCP_ERROR_CODES = frozenset({
     "legacy_write_disabled", "bridge_unavailable", "write_blocked",
     "confirmation_required", "unknown_tool", "tool_call_failed",
-    "unknown_heatloss_command",
+    "unknown_heatloss_command", "legacy_backend_unavailable",
 })
 
 

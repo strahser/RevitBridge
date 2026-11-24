@@ -11,7 +11,11 @@ This module keeps an explicit manifest (``manifests/dwg_policy.json``):
 
 * ``read_only``       — does not mutate the active Revit document;
 * ``writes_document`` — mutates the document or executes arbitrary commands;
-* ``destructive``     — a subset of writers that needs explicit confirmation.
+* ``destructive``     — a subset of writers that needs explicit confirmation;
+* ``deprecated``      — legacy ``dwg.revit_*`` tools (TCP 8098) mapped to their
+  canonical RevitBridge WS replacement (empty value when no exact equivalent).
+  They remain callable as a read-only fallback but are marked deprecated and
+  carry a hint in ``tools_describe`` / ``tools_search``.
 
 A tool that is absent from the manifest is treated as a writer (fail closed).
 The manifest is validated against the live child list by
@@ -32,10 +36,15 @@ def _names(value):
 class DwgToolPolicy:
     """Classify DwgParser tools and apply the result to their annotations."""
 
-    def __init__(self, read_only=(), writes_document=(), destructive=()):
+    def __init__(self, read_only=(), writes_document=(), destructive=(),
+                 deprecated=None):
         self.read_only = _names(read_only)
         self.writes_document = _names(writes_document)
         self.destructive = _names(destructive)
+        self.deprecated = {
+            str(key): str(value or "")
+            for key, value in (deprecated or {}).items()
+        }
 
     @classmethod
     def load(cls, path=None):
@@ -50,6 +59,7 @@ class DwgToolPolicy:
             read_only=data.get("read_only") or (),
             writes_document=data.get("writes_document") or (),
             destructive=data.get("destructive") or (),
+            deprecated=data.get("deprecated") or {},
         )
 
     @property
@@ -91,6 +101,32 @@ class DwgToolPolicy:
             )
         return result
 
+    def is_deprecated(self, canonical):
+        """Whether a tool is a legacy TCP path with a canonical WS replacement."""
+
+        return canonical in self.deprecated
+
+    def replacement(self, canonical):
+        """Canonical WS command for a deprecated tool (``""`` when none)."""
+
+        return self.deprecated.get(canonical, "")
+
+    def deprecation_hint(self, canonical):
+        """Client-visible hint for a deprecated legacy tool (``""`` otherwise)."""
+
+        if canonical not in self.deprecated:
+            return ""
+        replacement = self.deprecated[canonical]
+        if replacement:
+            return (
+                "DEPRECATED legacy TCP tool (8098); use RevitBridge WS "
+                f"'{replacement}' via tools_call."
+            )
+        return (
+            "DEPRECATED legacy TCP tool (8098); use tools_search for the "
+            "canonical RevitBridge WS command."
+        )
+
     def validate(self, tool_names):
         """Compare the manifest with the tools the child actually exposes."""
 
@@ -102,11 +138,18 @@ class DwgToolPolicy:
             "unknown": sorted(names - self.known),
             "overlap": sorted(self.read_only & self.writes_document),
             "destructive_not_writer": sorted(self.destructive - self.writes_document),
+            "deprecated_unknown": sorted(set(self.deprecated) - self.known),
+            "deprecated_not_legacy": sorted(
+                name for name in self.deprecated
+                if not name.startswith("dwg.revit_")
+            ),
         }
 
     def ok(self, report):
         return not (report["missing"] or report["unknown"] or report["overlap"]
-                    or report["destructive_not_writer"])
+                    or report["destructive_not_writer"]
+                    or report["deprecated_unknown"]
+                    or report["deprecated_not_legacy"])
 
 
 __all__ = ["DwgToolPolicy", "DEFAULT_PATH"]

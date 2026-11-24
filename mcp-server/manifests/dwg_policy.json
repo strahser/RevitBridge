@@ -118,5 +118,33 @@
     "dwg.revit_delete_elements",
     "dwg.revit_run_heatloss",
     "dwg.revit_send_command"
-  ]
+  ],
+  "deprecated": {
+    "dwg.revit_commands": "",
+    "dwg.revit_doc_info": "revit.doc_info",
+    "dwg.revit_export_schedule": "pipeline.get_schedule",
+    "dwg.revit_export_sheets_pdf": "pipeline.export_sheet_pdf",
+    "dwg.revit_export_view_image": "",
+    "dwg.revit_extract_ar_geometry": "",
+    "dwg.revit_get_bounding_box": "",
+    "dwg.revit_get_element": "revit.element_parameters",
+    "dwg.revit_get_schedule": "pipeline.get_schedule",
+    "dwg.revit_list_categories": "",
+    "dwg.revit_list_duct_types": "",
+    "dwg.revit_list_families": "",
+    "dwg.revit_list_grids": "",
+    "dwg.revit_list_levels": "revit.list_levels",
+    "dwg.revit_list_local_families": "",
+    "dwg.revit_list_mechanical_systems": "pipeline.list_systems",
+    "dwg.revit_list_pipe_types": "",
+    "dwg.revit_list_piping_systems": "pipeline.list_systems",
+    "dwg.revit_list_rooms": "revit.list_rooms",
+    "dwg.revit_list_schedules": "",
+    "dwg.revit_list_sheets": "pipeline.list_sheets",
+    "dwg.revit_list_views": "pipeline.list_views",
+    "dwg.revit_list_wall_types": "",
+    "dwg.revit_measure_distance": "",
+    "dwg.revit_ping": "revit.ping",
+    "dwg.revit_query_elements": "revit.current_view_elements"
+  }
 }

@@ -55,16 +55,23 @@ class DwgParserProvider:
                 continue
             canonical = "dwg." + bare_name(name)
             annotations = dict(_field(tool, "annotations") or {})
+            description = _field(tool, "description") or ""
+            deprecated = False
             if self._policy is not None:
                 annotations = self._policy.apply(canonical, annotations)
+                deprecated = self._policy.is_deprecated(canonical)
+                hint = self._policy.deprecation_hint(canonical)
+                if hint:
+                    description = (description + " " + hint).strip()
             specs.append(ToolSpec(
                 name=name,
                 canonical=canonical,
-                description=_field(tool, "description") or "",
+                description=description,
                 input_schema=_field(tool, "inputSchema") or {},
                 annotations=annotations,
                 provider=self.name,
                 domain="dwg",
+                deprecated=deprecated,
                 aliases=(),
             ))
         return specs

@@ -69,6 +69,25 @@ class DwgPolicyManifestTests(unittest.TestCase):
         self.assertIn("dwg.revit_create_sheet", report["missing"])
         self.assertFalse(self.policy.ok(report))
 
+    def test_legacy_revit_tools_are_deprecated_with_ws_hints(self):
+        self.assertEqual(26, len(self.policy.deprecated))
+        self.assertTrue(set(self.policy.deprecated) <= self.policy.read_only)
+        self.assertEqual("pipeline.list_sheets",
+                         self.policy.replacement("dwg.revit_list_sheets"))
+        self.assertIn("pipeline.list_sheets",
+                      self.policy.deprecation_hint("dwg.revit_list_sheets"))
+        self.assertIn("tools_search",
+                      self.policy.deprecation_hint("dwg.revit_list_grids"))
+        self.assertEqual("", self.policy.deprecation_hint("dwg.spec_export_pdf"))
+
+    def test_deprecated_section_is_validated(self):
+        report = self.policy.validate(self.policy.known)
+        self.assertEqual([], report["deprecated_unknown"])
+        self.assertEqual([], report["deprecated_not_legacy"])
+        self.assertTrue(self.policy.ok(report))
+        broken = DwgToolPolicy(deprecated={"dwg.revit_missing": ""})
+        self.assertFalse(broken.ok(broken.validate(broken.known)))
+
 
 class DwgProviderPolicyTests(unittest.TestCase):
     def setUp(self):
@@ -103,6 +122,13 @@ class DwgProviderPolicyTests(unittest.TestCase):
         gate = ToolPolicy("revit-read")
         self.assertIsNone(gate.check(specs["dwg.revit_list_sheets"]))
         self.assertEqual("write_blocked", gate.check(specs["dwg.revit_create_sheet"]).code)
+
+    def test_legacy_tool_is_deprecated_and_carries_hint(self):
+        specs = {spec.canonical: spec for spec in self.provider.list_tools()}
+        legacy = specs["dwg.revit_list_sheets"]
+        self.assertTrue(legacy.deprecated)
+        self.assertIn("pipeline.list_sheets", legacy.description)
+        self.assertFalse(specs["dwg.revit_create_sheet"].deprecated)
 
 
 if __name__ == "__main__":

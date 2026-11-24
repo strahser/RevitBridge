@@ -36,6 +36,20 @@ class ToolSpec:
             self.annotations = {}
 
 
+class LegacyBackendUnavailable(Exception):
+    """A tool's legacy backend is down (DwgParser Revit TCP 8098).
+
+    Carries structured fields so the facade can return a stable MCP error code
+    instead of a raw socket exception.  ``ToolCatalog.call`` re-raises it
+    unchanged.
+    """
+
+    def __init__(self, tool, detail=""):
+        self.tool = tool
+        self.detail = detail
+        super().__init__(detail)
+
+
 @dataclass
 class ProviderHealth:
     """Result of a provider health probe."""

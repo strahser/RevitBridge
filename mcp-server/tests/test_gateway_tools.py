@@ -6,6 +6,7 @@ is replaced with a catalog over fake providers so policy decisions are checked
 without touching the live bridge.
 """
 
+import json
 import os
 import sys
 import unittest
@@ -19,7 +20,7 @@ if SERVER_DIR not in sys.path:
 
 import server  # noqa: E402
 from catalog import ToolCatalog  # noqa: E402
-from models import ProviderHealth, ToolSpec  # noqa: E402
+from models import LegacyBackendUnavailable, ProviderHealth, ToolSpec  # noqa: E402
 from providers.dwgparser import DwgParserProvider  # noqa: E402
 from providers.revit_ws import RevitWsProvider  # noqa: E402
 
@@ -272,6 +273,90 @@ class DwgParserProviderTests(unittest.TestCase):
         record = provider.health()
         self.assertFalse(record.ok)
         self.assertEqual(record.name, "dwgparser")
+
+
+class LegacyDwgBackendTests(unittest.TestCase):
+    """Explicit error for legacy dwg.revit_* tools when TCP 8098 is down."""
+
+    def _child_result(self, payload):
+        return {
+            "content": [{"type": "text",
+                         "text": json.dumps(payload, ensure_ascii=False)}],
+            "isError": False,
+        }
+
+    def test_refused_connection_becomes_structured_error(self):
+        result = self._child_result({
+            "ok": False,
+            "error": "bridge call failed: [WinError 10061] ...",
+            "hint": "Revit must be open with RevitBimCoreBridge deployed (TCP 8098)",
+        })
+        with mock.patch.object(server, "_refresh_child_tools"), \
+             mock.patch.object(server, "_child_request", return_value=result):
+            with self.assertRaises(LegacyBackendUnavailable) as ctx:
+                server._gateway_dwg_call("revit_list_sheets", {})
+        self.assertEqual("dwg.revit_list_sheets", ctx.exception.tool)
+        self.assertIn("10061", ctx.exception.detail)
+
+    def test_other_dwg_tools_keep_child_result(self):
+        result = self._child_result({
+            "ok": False, "error": "bridge call failed: [WinError 10061] ...",
+        })
+        with mock.patch.object(server, "_refresh_child_tools"), \
+             mock.patch.object(server, "_child_request", return_value=result):
+            self.assertEqual(
+                result, server._gateway_dwg_call("list_layers", {})
+            )
+
+    def test_non_connection_failure_is_not_mapped(self):
+        result = self._child_result({"ok": False, "error": "no active document"})
+        with mock.patch.object(server, "_refresh_child_tools"), \
+             mock.patch.object(server, "_child_request", return_value=result):
+            self.assertEqual(
+                result, server._gateway_dwg_call("revit_list_sheets", {})
+            )
+
+    def test_tools_call_returns_legacy_backend_unavailable(self):
+        class LegacyProvider:
+            name = "dwgparser-legacy"
+
+            def list_tools(self):
+                return [ToolSpec(
+                    name="dwg_revit_list_sheets",
+                    canonical="dwg.revit_list_sheets",
+                    description="List sheets",
+                    annotations={"readOnlyHint": True, "writesDocument": False,
+                                 "destructiveHint": False},
+                    provider=self.name, domain="dwg",
+                )]
+
+            def call(self, name, args):
+                return server._gateway_dwg_call("revit_list_sheets", args)
+
+            def health(self):
+                return ProviderHealth(self.name, True)
+
+        catalog = ToolCatalog(profile="revit-read")
+        catalog.register(LegacyProvider())
+        result = self._child_result({
+            "ok": False, "error": "bridge call failed: [WinError 10061] ...",
+        })
+        with mock.patch.object(server, "_get_gateway", return_value=catalog), \
+             mock.patch.object(server, "_refresh_child_tools"), \
+             mock.patch.object(server, "_child_request", return_value=result):
+            response = server.tool_call("tools_call", {
+                "name": "dwg.revit_list_sheets",
+            })
+            self.assertEqual("legacy_backend_unavailable", response["error"])
+            self.assertIn("pipeline.list_sheets", response["hint"])
+            mcp = server.handle({
+                "id": 1, "method": "tools/call",
+                "params": {"name": "tools_call",
+                           "arguments": {"name": "dwg.revit_list_sheets"}},
+            })
+        self.assertTrue(mcp["isError"])
+        self.assertIn("legacy_backend_unavailable",
+                      mcp["content"][0]["text"])
 
 
 class StaticProviderAndToolListTests(unittest.TestCase):

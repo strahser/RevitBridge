@@ -10,10 +10,12 @@ canonical or alias leaves the catalog unchanged.
 from collections.abc import Mapping
 
 try:  # package import, e.g. ``mcp_server.catalog``
-    from .models import PolicyError, ProviderHealth, ToolSpec
+    from .models import (LegacyBackendUnavailable, PolicyError, ProviderHealth,
+                         ToolSpec)
     from .policy import ToolPolicy, is_write_tool
 except ImportError:  # flat import: <mcp-server> directory is on sys.path
-    from models import PolicyError, ProviderHealth, ToolSpec  # type: ignore[no-redef]
+    from models import (LegacyBackendUnavailable, PolicyError, ProviderHealth,
+                        ToolSpec)  # type: ignore[no-redef]
     from policy import ToolPolicy, is_write_tool  # type: ignore[no-redef]
 
 
@@ -154,7 +156,7 @@ class ToolCatalog:
         try:
             # Providers know their own tool name, not a caller-supplied alias.
             return provider.call(spec.name, args)
-        except PolicyError:
+        except (PolicyError, LegacyBackendUnavailable):
             raise
         except Exception as exc:
             raise RuntimeError(
