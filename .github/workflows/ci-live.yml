@@ -1,0 +1,53 @@
+name: CI live gates
+
+# Live gates are deliberately NOT part of the PR CI: they need a running Revit
+# 2024 with the RevitBridge add-in (WS 17871) and the sibling DwgParser checkout.
+# This job only observes; it never writes to or saves a Revit document.
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"  # Monday 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-gates:
+    name: Catalog + dwg policy (live)
+    runs-on: [self-hosted, windows, revit-2024]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: RevitBridge
+
+      - uses: actions/checkout@v4
+        with:
+          repository: strahser/DwgParser
+          path: DwgParser
+          # tools/list does not read LFS fixtures; skip ~800 MB download.
+          lfs: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime dependency
+        run: python -m pip install --upgrade pip websocket-client
+
+      - name: Wait for RevitBridge WS (17871)
+        shell: pwsh
+        run: |
+          for ($i = 0; $i -lt 12; $i++) {
+            python -X utf8 -c "import sys; sys.path.insert(0, 'RevitBridge/mcp-server'); import server; r = server._bridge_call('ping', {}, timeout=5); print(r); sys.exit(0 if isinstance(r, dict) else 1)"
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Start-Sleep -Seconds 10
+          }
+          throw "RevitBridge WS at 127.0.0.1:17871 is not available"
+
+      - name: Catalog consistency gate
+        run: python -X utf8 RevitBridge/mcp-server/catalog_build.py --db "${{ runner.temp }}/tool_catalog.db" --verify
+
+      - name: DwgParser policy gate
+        run: python -X utf8 RevitBridge/tools/dwg_policy_audit.py
